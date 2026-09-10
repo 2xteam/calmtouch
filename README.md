@@ -16,6 +16,7 @@ cp .env.example .env.local     # 값을 채운다 (필수 값은 없다)
 npm run dev                    # http://localhost:3007
 npm run dev:verify             # 검증용 서버 3017 · .next-verify
 npm run icons                  # public/app-icon.svg → PNG 파생물
+npm run thumbs                 # 장면 카드 썸네일 — 서버(3007)를 띄운 채 실제 화면을 캡처한다
 ```
 
 포트는 앱마다 다르다 — 전체 표는 볼트 `Home.md`.

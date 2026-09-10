@@ -24,7 +24,7 @@ export function RecentScene() {
     <section className="sheet sheet--tint">
       <p className="eyebrow">CONTINUE</p>
       <Link href={`/play/${scene.slug}`} className="recent">
-        <span className="recent-thumb" style={{ backgroundImage: scene.thumb }} aria-hidden="true">
+        <span className="recent-thumb" style={{ backgroundImage: `url(/thumbs/${scene.slug}.webp), ${scene.thumb}` }} aria-hidden="true">
           {scene.emoji}
         </span>
         <span className="recent-body">

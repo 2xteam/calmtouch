@@ -614,8 +614,10 @@ a {
 .scene-thumb {
   position: relative;
   aspect-ratio: 4 / 3;
-  background-size: cover;
-  background-position: center;
+  /* 캡처 이미지 위에 그라디언트 폴백 — 두 층 모두 채운다 */
+  background-size: cover, cover;
+  background-position: center, center;
+  background-repeat: no-repeat;
   display: flex;
   align-items: flex-end;
   justify-content: flex-start;
@@ -670,7 +672,8 @@ a {
   width: 56px;
   height: 56px;
   border-radius: 14px;
-  background-size: cover;
+  background-size: cover, cover;
+  background-position: center, center;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -884,6 +887,23 @@ a {
 .play-btn[aria-pressed="true"] {
   border-color: var(--gold-on-dark);
   color: var(--gold-on-dark);
+}
+
+/* 기울기 안내 — 도구 바 위 한 줄 */
+.play-note {
+  margin: 0 auto 10px;
+  max-width: 420px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(6, 26, 31, 0.7);
+  border: 1px solid var(--border-on-dark);
+  color: var(--on-dark);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  word-break: keep-all;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .play-tools {

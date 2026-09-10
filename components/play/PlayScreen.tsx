@@ -39,6 +39,9 @@ export function PlayScreen({ scene }: { scene: Scene }) {
   const [fullscreen, setFullscreen] = useState(false);
   const [canFullscreen, setCanFullscreen] = useState(false);
   const [color, setColor] = useState<string>(scene.color.kind === "single" ? scene.color.defaultColor : "#eef7f8");
+  /** 기울기 안내 — 켰는데 센서 값이 안 오면 왜인지 알려 준다 */
+  const [tiltNote, setTiltNote] = useState<string>("");
+  const lastOrientationAt = useRef(0);
   const [colorReady, setColorReady] = useState(false);
 
   /* 이벤트 핸들러가 최신 설정을 읽도록 ref 에 비춘다 */
@@ -156,6 +159,7 @@ export function PlayScreen({ scene }: { scene: Scene }) {
         };
         const onOrientation = (e: DeviceOrientationEvent) => {
           if (e.beta == null || e.gamma == null) return;
+          lastOrientationAt.current = performance.now();
           tiltNow.current = { beta: e.beta, gamma: e.gamma };
           if (!tiltBase.current) tiltBase.current = { beta: e.beta, gamma: e.gamma };
         };
@@ -171,6 +175,8 @@ export function PlayScreen({ scene }: { scene: Scene }) {
         canvas.addEventListener("pointerleave", onLeave);
         canvas.addEventListener("wheel", onWheel, { passive: false });
         window.addEventListener("deviceorientation", onOrientation);
+        // 일부 안드로이드 크롬은 absolute 쪽으로만 값을 준다
+        window.addEventListener("deviceorientationabsolute", onOrientation as EventListener);
         document.addEventListener("visibilitychange", onVisibility);
 
         const driftTimer = window.setInterval(() => {
@@ -198,6 +204,7 @@ export function PlayScreen({ scene }: { scene: Scene }) {
           canvas.removeEventListener("pointerleave", onLeave);
           canvas.removeEventListener("wheel", onWheel);
           window.removeEventListener("deviceorientation", onOrientation);
+          window.removeEventListener("deviceorientationabsolute", onOrientation as EventListener);
           document.removeEventListener("visibilitychange", onVisibility);
           window.clearInterval(driftTimer);
           window.clearInterval(tiltTimer);
@@ -242,19 +249,37 @@ export function PlayScreen({ scene }: { scene: Scene }) {
     showUi();
     if (tilt) {
       setTilt(false);
+      setTiltNote("");
       tiltBase.current = null;
       return;
     }
+    // https 가 아니면 브라우저가 센서 이벤트를 보내지 않는다 (localhost 는 예외)
+    if (typeof window !== "undefined" && window.location.protocol !== "https:" && window.location.hostname !== "localhost") {
+      setTiltNote("기울기는 https 로 열었을 때만 돼요. 주소를 확인해 주세요.");
+      return;
+    }
+    // iOS 13+ — 사용자 동작 안에서 허용을 받아야 한다. 이 함수는 버튼 클릭 핸들러다
     const D = (window as unknown as { DeviceOrientationEvent?: { requestPermission?: () => Promise<string> } }).DeviceOrientationEvent;
     if (D?.requestPermission) {
       try {
-        if ((await D.requestPermission()) !== "granted") return;
+        const r = await D.requestPermission();
+        if (r !== "granted") {
+          setTiltNote("동작 센서 접근이 허용되지 않았어요. 설정 › Safari › 동작 및 방향 접근을 켜 주세요.");
+          return;
+        }
       } catch {
+        setTiltNote("동작 센서 허용을 요청하지 못했어요. 페이지를 새로 열고 다시 눌러 주세요.");
         return;
       }
     }
     tiltBase.current = null;
     setTilt(true);
+    setTiltNote("기울기 켬 — 센서 값을 기다려요…");
+    const started = performance.now();
+    window.setTimeout(() => {
+      if (lastOrientationAt.current >= started) setTiltNote("");
+      else setTiltNote("센서 값이 오지 않아요. 브라우저 사이트 설정에서 '움직임 센서'가 허용돼 있는지 확인해 주세요.");
+    }, 1800);
   };
 
   const pickColor = (hex: string) => {
@@ -324,6 +349,7 @@ export function PlayScreen({ scene }: { scene: Scene }) {
           </div>
         ) : null}
 
+        {tiltNote ? <p className="play-note">{tiltNote}</p> : null}
         <div className="play-tools">
           <button type="button" className="play-btn play-btn--label" onClick={clear}>
             지우기

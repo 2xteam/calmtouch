@@ -104,9 +104,17 @@ export const createFluidEngine: EngineFactory = (canvas, ctx) => {
       sim.splatPointer(x, y, 0, delta * 0.6, scaleDye(c, pointerDye));
     },
     tilt(fx, fy) {
+      // 기울인 쪽으로 화면 전체가 흐른다 — 기울기에 수직인 선 위 다섯 점에서 넓은 힘을 준다.
+      // 한 점에 작은 splat 을 넣던 첫 판은 눈에 띄지 않아 "안 된다" 고 보였다 (2026-09-10)
       util.colorAt = -Infinity;
       const c = colorFor(util, performance.now());
-      sim.splat(Math.random(), Math.random(), fx * 260, fy * 260, scaleDye(c, 0.25 * pointerDye), 2.2);
+      const len = Math.hypot(fx, fy) || 1;
+      const nx = -fy / len, ny = fx / len; // 수직 방향
+      for (let i = 0; i < 5; i++) {
+        const t = (i / 4 - 0.5) * 1.4;
+        const px = 0.5 + nx * t - fx * 0.25, py = 0.5 + ny * t - fy * 0.25;
+        sim.splat(px, py, fx * 420, fy * 420, scaleDye(c, 0.12 * pointerDye), 3.2);
+      }
     },
     idle() {
       util.colorAt = -Infinity;

@@ -9,6 +9,7 @@
     "start": "next start -p 3007",
     "lint": "next lint",
     "icons": "node scripts/make-icons.mjs",
+    "thumbs": "node scripts/make-thumbs.mjs",
     "dev:verify": "node scripts/dev-verify.mjs"
   },
   "dependencies": {
