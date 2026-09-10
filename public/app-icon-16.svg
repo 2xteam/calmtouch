@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <!--
+    16px 전용 CalmTouch 아이콘.
+
+    app-icon.svg 를 16px 로 줄이면 게이지 호와 고리 두 개가 같은 몇 픽셀을 나눠 쓰면서
+    회색 덩어리가 된다. 32px 에서는 읽힌다.
+
+    16px 에서는 버릴 것을 버린다 —
+      · 게이지 호 — 지운다
+      · 고리 두 개 → 굵은 고리 하나. 끊김도 없앤다 (1px 틈은 점으로만 남는다)
+    남기는 것은 **점과 고리 하나** — 이 아이콘의 정체다. 중심에서 1.55배로 키운다.
+    → my-obsidian-vault / 20-Design/앱 공통 UI와 아이콘.md
+  -->
+  <defs>
+    <linearGradient id="tile16" x1="0" y1="0" x2="1" y2="1" gradientTransform="rotate(15)">
+      <stop offset="0" stop-color="#134450"/>
+      <stop offset="1" stop-color="#071c22"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="192" height="192" rx="44" fill="url(#tile16)"/>
+
+  <g transform="translate(96 96) scale(1.55) translate(-96 -101)">
+    <circle cx="96" cy="101" r="31" fill="none" stroke="#eef7f8" stroke-width="15"/>
+    <circle cx="96" cy="101" r="10" fill="#eef7f8"/>
+  </g>
+</svg>

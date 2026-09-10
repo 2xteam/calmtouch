@@ -1,0 +1,304 @@
+/* 생성 파일 — 고치지 말 것. 원본은 myjane/design/elements.css 다.
+   고친 뒤 `npm run elements -- --write` 로 여섯 앱에 함께 반영한다. */
+
+/*
+ * 디자인 요소 — 결쩜사에서 가져온 네 가지.
+ *
+ * ⚠️ 이 파일이 **원본**이다. 여섯 앱의 `app/elements.css` 는 생성 파일이다.
+ * 고칠 곳은 여기고, 옮기는 명령은 이것이다.
+ *
+ *     npm run elements -- --write
+ *
+ * 팔레트(`design/palette.json`)와 같은 구조다. 아이콘과 Sheet.tsx 가 여섯 벌로
+ * 갈라져 사고가 났던 이유가 복사본이었다 — CSS 는 처음부터 한 곳에 둔다.
+ *
+ * ⚠️ 왜 globals.css 가 아닌가: 처음엔 2026-09-07 에 A·C 작업이 같은 트리에서
+ * 병행돼 충돌을 피하려고 뺐다. 다섯 앱으로 옮기면서 이유가 하나 더 붙었다 —
+ * globals.css 는 앱마다 1000줄 넘게 다르지만 이 요소들은 여섯 앱이 같아야 한다.
+ *
+ * ⚠️ 불러오는 자리는 `app/layout.tsx`, **globals.css 다음 줄**이다.
+ * globals.css 안에서 `@import` 하면 안 된다 — @import 는 파일 맨 앞이라야 하니
+ * 규칙이 늘 globals.css 보다 먼저 들어가고, `.sheet--point` 처럼 특이도가 같은
+ * 규칙이 `.sheet` 에게 진다. 처음에 그렇게 넣었다가 라운딩이 먹지 않았다.
+ *
+ * 근거: my-obsidian-vault → 50-Plans/A 디자인 요소 추가.md
+ *       my-obsidian-vault → 20-Design/여섯 앱 디자인 시스템.md
+ */
+
+/* ────────────────────────────────────────────────────────────
+ * 0. 두 어휘를 잇는다
+ *
+ * 토큰 이름이 두 갈래다. myjane 은 짧은 이름(`--text`), 다섯 앱은 접미사 이름
+ * (`--text-primary`)을 쓴다. 팔레트 원본은 하나인데 어휘가 둘이라 생긴 차이다.
+ *   → scripts/sync-palette.mjs 의 NAMES
+ *
+ * 여기서 다리를 놓아 아래 규칙들이 여섯 앱에서 같은 이름을 쓴다.
+ * `var(x, y)` 는 x 가 선언돼 있지 않을 때 y 를 쓴다.
+ *
+ * ⚠️ 대비 검사 규칙 B(미정의 변수)는 `var(--x)` 만 본다 — 대체값이 붙은
+ * `var(--x, ...)` 는 지나친다. 이 다리에서는 오타를 잡아주지 못한다.
+ * ──────────────────────────────────────────────────────────── */
+
+:root {
+  --el-soft: var(--accent-soft, var(--accent-subtle));
+  --el-dim: var(--text-dim, var(--text-secondary));
+  --el-text: var(--text, var(--text-primary));
+}
+
+/* ────────────────────────────────────────────────────────────
+ * 1. 스크롤 프로그레스 바
+ *
+ * 헤더 아래에 얇은 띠가 차오르며 페이지가 얼마나 남았는지 보여준다.
+ * 진행률은 컴포넌트가 --scroll-progress(0~1)로 넣어준다.
+ *   → components/ScrollProgress.tsx
+ *
+ * 헤더가 sticky 라야 스크롤 중에도 보인다. myjane 의 .site-top 은 원래
+ * sticky 가 아니었다 — 다섯 앱의 랜딩 헤더와 맞추면서 함께 바꿨다.
+ * ──────────────────────────────────────────────────────────── */
+
+/* 진행 띠를 담는 헤더는 **자리를 지켜야** 한다. absolute 인 띠가 그 안에
+   붙으므로, 헤더가 스크롤과 함께 올라가 버리면 띠도 같이 사라진다.
+
+   앱마다 사정이 다르다 —
+     myjane 랜딩 `.site-top`      원래 sticky 가 아니었다. 여기서 만든다
+     myjane 로그인·법적 `.auth-topbar`  같다
+     다섯 앱 랜딩 headerStyle     인라인으로 이미 sticky
+     다섯 앱 앱화면 `.topnav`     이미 position: fixed
+   뒤의 둘은 손대지 않는다. */
+.site-top,
+.auth-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+/* 다섯 앱 앱화면의 상단 줄. `.topnav` 은 이미 fixed 지만 햄버거를 열면 메뉴만큼
+   키가 자란다 — 띠는 높이가 고정된 이 줄 안에 붙어야 제자리에 있다.
+   그래서 여기에 컨테이닝 블록을 만든다. */
+.topnav-bar {
+  position: relative;
+}
+
+.scroll-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px; /* .site-top 의 border-bottom 위에 얹는다 */
+  height: 3px;
+  pointer-events: none;
+  /* 트랙을 그리지 않는다 — 차오르는 부분만 보인다 */
+  background: none;
+  overflow: hidden;
+}
+
+.scroll-progress::after {
+  content: "";
+  display: block;
+  height: 100%;
+  width: 100%;
+  /* 두 테마색 사이를 잇는다. 띠는 **폭 100% 로 칠한 뒤 scaleX 로 줄이므로**
+     그라디언트도 함께 눌린다 — 그래서 띠가 30% 든 90% 든 양쪽 끝 색이 늘
+     보이고 가운데만 부드럽게 섞인다. 고정 폭 그라디언트를 마스크로 드러내면
+     초반에 왼쪽 색만 보여서 전혀 다른 느낌이 된다.
+     결쩜사는 width 를 %로 직접 줬는데(같은 결과), scaleX 는 레이아웃을
+     다시 계산하지 않아 스크롤 중에 더 싸다.
+     근거: my-obsidian-vault → 50-Plans/A 디자인 요소 추가.md */
+  background: linear-gradient(
+    90deg,
+    var(--progress-from) 0%,
+    var(--progress-to) 100%
+  );
+  transform-origin: 0 50%;
+  transform: scaleX(var(--scroll-progress, 0));
+  transition: transform 0.08s linear;
+}
+
+/* 움직임을 줄이겠다는 설정에서는 따라오는 애니메이션을 끈다 */
+@media (prefers-reduced-motion: reduce) {
+  .scroll-progress::after {
+    transition: none;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────
+ * 2. 밑줄 포인트
+ *
+ * 글자 뒤에 형광펜처럼 깔리는 띠. `text-decoration` 이 아니라 **배경**이다 —
+ * 밑줄은 글자에 붙어 얇고, 이건 글자 아래를 덮는 면이라야 한다.
+ *
+ * ⚠️ `.headline span` 은 이미 그라디언트 글자색(background-clip: text)에
+ * 쓰이고 있다. 같은 선택자를 쓰면 충돌하므로 `.mark` 를 따로 둔다.
+ *
+ * ⚠️ 한 헤드라인에 **한 군데만.** 두 곳이면 강조가 사라진다.
+ * 짙은 시트에서는 쓰지 않는다 — 금색 띠가 어두운 면에서 탁해진다.
+ * ──────────────────────────────────────────────────────────── */
+
+.mark,
+.headline .mark {
+  /* 아래 30% 만 칠한다. 62% 로 잡았더니 띠가 글자 가운데를 지나 두꺼웠다 —
+     한글은 라틴보다 글자가 아래에 앉아서 형광펜 자리가 더 낮다 */
+  background: linear-gradient(
+    transparent 70%,
+    color-mix(in srgb, var(--gold) 38%, transparent) 70%
+  );
+  /* 띠가 글자 좌우로 살짝 삐져나오게 — 형광펜처럼 보인다 */
+  padding: 0 2px;
+  margin: 0 -2px;
+  /* ⚠️ `.headline span` 의 그라디언트 글자색을 되돌린다. 그 규칙은
+     background-clip: text + color: transparent 라서, 되돌리지 않으면
+     글자가 띠가 아니라 그라디언트로 칠해진다 (대비 1.0 으로 측정됐다). */
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  -webkit-text-fill-color: currentColor;
+  color: inherit;
+}
+
+/* 다크 테마에서는 **형광펜이 아니라 밑줄**로 바꾼다.
+ *
+ * 왜 모양을 바꾸는가 — 형광펜은 "밝은 띠 + 어두운 글자" 로 성립한다. 다크에서는
+ * 글자가 밝아야 카드 위에서 읽히므로 띠도 어두워야 하고, 그러면 띠가 금색이
+ * 아니라 탁한 올리브색(rgb 96 108 87)으로 보인다. 실제로 그렇게 렌더돼
+ * 형광펜이 아니라 얼룩처럼 보였다.
+ *
+ * 띠를 밝게 올리면 반대로 글자가 안 읽힌다 — 금색 55% 만 섞어도 3.4:1 이다.
+ * 글자 위를 덮지 않는 밑줄로 바꾸면 둘 다 지킬 수 있다: 글자는 카드 위에서
+ * 13.66:1, 금색 선은 카드 위에서 9.7:1 (비텍스트 기준 3.0).
+ *
+ * myjane 에는 다크 테마가 없어서 이 블록이 걸리지 않는다.
+ */
+[data-theme="dark"] .mark,
+[data-theme="dark"] .headline .mark {
+  background: linear-gradient(
+    transparent calc(100% - 3px),
+    var(--gold) calc(100% - 3px)
+  );
+}
+
+/* ────────────────────────────────────────────────────────────
+ * 3. 프로세스 타임라인
+ *
+ * 왼쪽에 번호 원과 연결선, 오른쪽에 배지 + 제목 + 설명.
+ * 단계가 **3개 이상이고 순서가 중요할 때**만 쓴다. 순서가 없는 항목을
+ * 번호로 묶으면 없는 순서를 만들어낸다.
+ * ──────────────────────────────────────────────────────────── */
+
+/* 폭을 묶는다. 단계 설명은 짧아서 시트 폭을 다 쓰면 한 줄이 너무 길어진다.
+   기본은 왼쪽 — 시트의 헤드라인 왼쪽 끝과 맞는다 */
+.flow {
+  list-style: none;
+  max-width: 560px;
+  margin: 26px 0 0;
+  padding: 0;
+}
+
+/* 헤드라인을 가운데 정렬한 시트에서만 붙인다 (myjane 랜딩).
+   ⚠️ 붙이는 걸 잊으면 왼쪽에 쏠려 보이고, 왼쪽 정렬 시트에 붙이면 제 헤드라인보다
+   안쪽으로 들어가 어긋나 보인다 — 다섯 앱에 옮길 때 실제로 그렇게 됐다 */
+.flow--center {
+  margin-inline: auto;
+}
+
+.flow-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 14px;
+  padding-bottom: 26px;
+}
+
+.flow-step:last-child {
+  padding-bottom: 0;
+}
+
+/* 번호 원을 잇는 세로선. 마지막 단계에는 그리지 않는다 */
+.flow-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 17px;
+  top: 34px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--border);
+}
+
+.flow-num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: var(--el-soft);
+  color: var(--accent-ink);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.flow-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+
+/* 조건을 한눈에 보여주는 작은 알약. 글자용 토큰을 쓴다 */
+.flow-badge {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--el-soft);
+  color: var(--accent-ink);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.flow-badge--point {
+  background: var(--gold-soft);
+  color: var(--point-ink);
+}
+
+.flow-step h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--el-text);
+  word-break: keep-all;
+}
+
+.flow-step p {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  line-height: 1.75;
+  color: var(--el-dim);
+  word-break: keep-all;
+}
+
+/* ────────────────────────────────────────────────────────────
+ * 4. 카드 라운딩 포인트
+ *
+ * 왼쪽위·오른쪽하단만 깎아 대각선 방향성을 만든다. 반(12px)에서 한 번 더
+ * 줄여 6px 이다 — 12px 은 다른 시트의 24px 과 구분이 약해 눈에 덜 띄었다.
+ * 시선이 좌상 → 우하로 흐르는 방향과 같아 자연스럽다.
+ *
+ * ⚠️ 어디에 넣을지가 이 요소의 전부다. 아무 카드에나 쓰면 방향성이 서로
+ * 상쇄돼 의미가 없어진다. **한 화면에 최대 1~2개.**
+ *
+ *   넣는다    히어로 · 마무리 CTA · 상태 신호(조건부) · 달성 카드
+ *   안 넣는다  나란히 놓인 카드들 · 목록의 반복 항목 · 입력 폼
+ *
+ * 기준은 → 20-Design/여섯 앱 디자인 시스템.md
+ * ──────────────────────────────────────────────────────────── */
+
+/* **깎는 것은 부모(시트)뿐이다.** 안쪽 카드는 평범한 둥글기를 그대로 둔다.
+   그래서 "이 시트는 안에 카드를 담고 있다" 가 모서리만 보고 읽힌다 —
+   자식까지 깎으면 부모·자식이 같은 신호를 내서 계층이 사라진다.
+   (2026-09-07 에 자식을 깎아 봤다가 되돌렸다)
+
+   두 모서리만 **덮어쓴다.** 나머지 둘은 요소가 원래 갖던 반경을 그대로 쓴다 —
+   border-radius 를 통째로 쓰면 다른 반경을 가진 요소에는 못 쓴다. */
+.sheet--point {
+  /* 시트 반경의 1/4 — 24px 이면 6px 이다 */
+  --el-cut: calc(var(--radius-lg, 24px) / 4);
+  border-top-left-radius: var(--el-cut);
+  border-bottom-right-radius: var(--el-cut);
+}

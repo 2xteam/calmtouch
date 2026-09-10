@@ -1,0 +1,27 @@
+{
+  "name": "calmtouch",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3007",
+    "dev:https": "next dev --experimental-https -p 3007",
+    "build": "next build",
+    "start": "next start -p 3007",
+    "lint": "next lint",
+    "icons": "node scripts/make-icons.mjs",
+    "dev:verify": "node scripts/dev-verify.mjs"
+  },
+  "dependencies": {
+    "next": "^15.2.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^15.2.4",
+    "typescript": "^5.8.0"
+  }
+}

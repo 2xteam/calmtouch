@@ -1,0 +1,361 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ENGINES } from "@/lib/engines/index";
+import { EngineUnsupportedError, type SceneEngine } from "@/lib/engines/types";
+import { loadColor, rememberRecent, saveColor } from "@/lib/recent";
+import type { Scene } from "@/lib/scenes";
+
+/**
+ * 장면 하나를 전체 화면으로 띄우는 플레이어.
+ *
+ * 엔진은 모른다 — `lib/engines/index.ts` 에서 장면의 `engine` 키로 지연 로드하고,
+ * 입력 네 가지(포인터 · 휠 · 기울기 · 흐름)와 도구(지우기 · 색 · 소리)를 넘겨 준다.
+ *
+ * UI 는 탭(pointerdown)하면 나타나고 3초 뒤 사라진다. 문지르는 동안에는 늘리지 않는다 —
+ * 손을 움직이는 내내 버튼이 떠 있으면 화면을 만지는 느낌이 깨진다.
+ */
+
+const UI_HIDE_MS = 3000;
+const IDLE_BEFORE_DRIFT_MS = 2200;
+const DRIFT_EVERY_MS = 1700;
+const TILT_EVERY_MS = 120;
+
+type Status = "loading" | "ok" | "no";
+
+export function PlayScreen({ scene }: { scene: Scene }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const engineRef = useRef<SceneEngine | null>(null);
+
+  const [status, setStatus] = useState<Status>("loading");
+  const [reason, setReason] = useState<string>("");
+  const [uiVisible, setUiVisible] = useState(true);
+  const [drift, setDrift] = useState(scene.idleDrift);
+  const [tilt, setTilt] = useState(false);
+  const [tiltAvailable, setTiltAvailable] = useState(false);
+  const [sound, setSound] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [canFullscreen, setCanFullscreen] = useState(false);
+  const [color, setColor] = useState<string>(scene.color.kind === "single" ? scene.color.defaultColor : "#eef7f8");
+  const [colorReady, setColorReady] = useState(false);
+
+  /* 이벤트 핸들러가 최신 설정을 읽도록 ref 에 비춘다 */
+  const settings = useRef({ drift, tilt });
+  useEffect(() => {
+    settings.current = { drift, tilt };
+  }, [drift, tilt]);
+
+  const hideTimer = useRef<number | null>(null);
+  const showUi = useCallback(() => {
+    setUiVisible(true);
+    if (hideTimer.current) window.clearTimeout(hideTimer.current);
+    hideTimer.current = window.setTimeout(() => setUiVisible(false), UI_HIDE_MS);
+  }, []);
+
+  const tiltBase = useRef<{ beta: number; gamma: number } | null>(null);
+  const tiltNow = useRef<{ beta: number; gamma: number } | null>(null);
+
+  // ── 첫 렌더: 기기 능력 · 저장된 색 (렌더 중에 document 를 보면 hydration 이 어긋난다) ──
+  useEffect(() => {
+    setTiltAvailable("DeviceOrientationEvent" in window);
+    setCanFullscreen(!!document.documentElement.requestFullscreen);
+    if (scene.color.kind === "single") {
+      const saved = loadColor(scene.slug);
+      if (saved) setColor(saved);
+    }
+    setColorReady(true);
+    rememberRecent(scene.slug);
+    showUi();
+    return () => {
+      if (hideTimer.current) window.clearTimeout(hideTimer.current);
+    };
+  }, [scene, showUi]);
+
+  // ── 엔진 로드 · 입력 연결 ────────────────────────────────
+  useEffect(() => {
+    if (!colorReady) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    let cancelled = false;
+    let engine: SceneEngine | null = null;
+    let cleanup: (() => void) | null = null;
+
+    const load = ENGINES[scene.engine];
+    if (!load) {
+      setReason("이 장면은 아직 준비 중이에요");
+      setStatus("no");
+      return;
+    }
+    load()
+      .then((factory) => {
+        if (cancelled) return;
+        try {
+          engine = factory(canvas, { scene, color, sound: false });
+        } catch (e) {
+          setReason(e instanceof EngineUnsupportedError ? e.message : "이 장면을 그리는 중에 문제가 생겼어요");
+          setStatus("no");
+          return;
+        }
+        engineRef.current = engine;
+        setStatus("ok");
+
+        let lastActive = performance.now();
+        const pressed = new Set<number>();
+        const last = new Map<number, { x: number; y: number }>();
+        let lastMouse = { x: canvas.clientWidth / 2, y: canvas.clientHeight / 2 };
+        const local = (e: { clientX: number; clientY: number }) => {
+          const r = canvas.getBoundingClientRect();
+          return { x: e.clientX - r.left, y: e.clientY - r.top };
+        };
+
+        const onDown = (e: PointerEvent) => {
+          const { x, y } = local(e);
+          const id = e.pointerType === "mouse" ? 0 : e.pointerId;
+          pressed.add(id);
+          last.set(id, { x, y });
+          lastActive = performance.now();
+          showUi();
+          engine!.pointerDown(x, y, id);
+        };
+        const onMove = (e: PointerEvent) => {
+          const { x, y } = local(e);
+          const id = e.pointerType === "mouse" ? 0 : e.pointerId;
+          if (e.pointerType === "mouse") lastMouse = { x, y };
+          const prev = last.get(id);
+          last.set(id, { x, y });
+          if (!prev) {
+            if (e.pointerType !== "mouse") return;
+            engine!.pointerMove(x, y, 0, 0, id, false);
+            return;
+          }
+          const dx = x - prev.x;
+          const dy = y - prev.y;
+          if (dx === 0 && dy === 0) return;
+          const isPressed = pressed.has(id) || e.pointerType !== "mouse";
+          if (isPressed || e.pointerType === "mouse") lastActive = performance.now();
+          engine!.pointerMove(x, y, dx, dy, id, isPressed);
+        };
+        const onUp = (e: PointerEvent) => {
+          const id = e.pointerType === "mouse" ? 0 : e.pointerId;
+          pressed.delete(id);
+          if (e.pointerType !== "mouse") last.delete(id);
+          engine!.pointerUp(id);
+        };
+        const onLeave = (e: PointerEvent) => {
+          const id = e.pointerType === "mouse" ? 0 : e.pointerId;
+          pressed.delete(id);
+          last.delete(id);
+          engine!.pointerUp(id);
+        };
+        const onWheel = (e: WheelEvent) => {
+          e.preventDefault();
+          lastActive = performance.now();
+          engine!.wheel(lastMouse.x, lastMouse.y, Math.max(-80, Math.min(80, e.deltaY)));
+        };
+        const onOrientation = (e: DeviceOrientationEvent) => {
+          if (e.beta == null || e.gamma == null) return;
+          tiltNow.current = { beta: e.beta, gamma: e.gamma };
+          if (!tiltBase.current) tiltBase.current = { beta: e.beta, gamma: e.gamma };
+        };
+        const onVisibility = () => {
+          if (document.hidden) engine!.stop();
+          else engine!.start();
+        };
+
+        canvas.addEventListener("pointerdown", onDown);
+        canvas.addEventListener("pointermove", onMove);
+        canvas.addEventListener("pointerup", onUp);
+        canvas.addEventListener("pointercancel", onLeave);
+        canvas.addEventListener("pointerleave", onLeave);
+        canvas.addEventListener("wheel", onWheel, { passive: false });
+        window.addEventListener("deviceorientation", onOrientation);
+        document.addEventListener("visibilitychange", onVisibility);
+
+        const driftTimer = window.setInterval(() => {
+          if (!settings.current.drift) return;
+          if (performance.now() - lastActive < IDLE_BEFORE_DRIFT_MS) return;
+          engine!.idle();
+        }, DRIFT_EVERY_MS);
+
+        const tiltTimer = window.setInterval(() => {
+          if (!settings.current.tilt || !tiltBase.current || !tiltNow.current) return;
+          const fx = Math.max(-1, Math.min(1, (tiltNow.current.gamma - tiltBase.current.gamma) / 30));
+          const fy = Math.max(-1, Math.min(1, -(tiltNow.current.beta - tiltBase.current.beta) / 30));
+          if (Math.hypot(fx, fy) < 0.08) return;
+          lastActive = performance.now();
+          engine!.tilt(fx, fy);
+        }, TILT_EVERY_MS);
+
+        engine.start();
+
+        cleanup = () => {
+          canvas.removeEventListener("pointerdown", onDown);
+          canvas.removeEventListener("pointermove", onMove);
+          canvas.removeEventListener("pointerup", onUp);
+          canvas.removeEventListener("pointercancel", onLeave);
+          canvas.removeEventListener("pointerleave", onLeave);
+          canvas.removeEventListener("wheel", onWheel);
+          window.removeEventListener("deviceorientation", onOrientation);
+          document.removeEventListener("visibilitychange", onVisibility);
+          window.clearInterval(driftTimer);
+          window.clearInterval(tiltTimer);
+        };
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setReason("장면을 불러오지 못했어요. 네트워크를 확인하고 다시 열어 주세요");
+        setStatus("no");
+      });
+
+    return () => {
+      cancelled = true;
+      cleanup?.();
+      engine?.dispose();
+      engineRef.current = null;
+    };
+    // color 는 처음 값만 넘기고 이후는 setColor 로 전달한다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colorReady, scene, showUi]);
+
+  // ── 전체 화면 ─────────────────────────────────────────────
+  useEffect(() => {
+    const onChange = () => setFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    const el = rootRef.current;
+    if (!el) return;
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await el.requestFullscreen();
+    } catch {
+      /* iOS Safari 는 requestFullscreen 이 없다 — 홈 화면에 추가하면 standalone 으로 뜬다 */
+    }
+    showUi();
+  };
+
+  const toggleTilt = async () => {
+    showUi();
+    if (tilt) {
+      setTilt(false);
+      tiltBase.current = null;
+      return;
+    }
+    const D = (window as unknown as { DeviceOrientationEvent?: { requestPermission?: () => Promise<string> } }).DeviceOrientationEvent;
+    if (D?.requestPermission) {
+      try {
+        if ((await D.requestPermission()) !== "granted") return;
+      } catch {
+        return;
+      }
+    }
+    tiltBase.current = null;
+    setTilt(true);
+  };
+
+  const pickColor = (hex: string) => {
+    setColor(hex);
+    saveColor(scene.slug, hex);
+    engineRef.current?.setColor?.(hex);
+    showUi();
+  };
+
+  const toggleSound = () => {
+    const next = !sound;
+    setSound(next);
+    engineRef.current?.setSound?.(next);
+    showUi();
+  };
+
+  const clear = () => {
+    engineRef.current?.clear();
+    showUi();
+  };
+
+  return (
+    <div ref={rootRef} className="play" data-ui={uiVisible ? "shown" : "hidden"}>
+      <canvas ref={canvasRef} className="play-canvas" aria-label={`${scene.title} 장면`} />
+
+      {status === "no" ? (
+        <div className="play-unsupported">
+          <p className="eyebrow">NOT AVAILABLE</p>
+          <h1 className="headline">이 장면을 열 수 없어요</h1>
+          <p className="lead">{reason}</p>
+          <Link className="btn btn--ghost" href="/scenes" style={{ marginTop: 18 }}>
+            장면 목록으로
+          </Link>
+        </div>
+      ) : null}
+
+      <div className="play-ui play-top">
+        <Link href="/scenes" className="play-btn" aria-label="장면 목록으로">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </Link>
+        <div className="play-title">
+          <span className="play-title-name">{scene.title}</span>
+          <span className="play-title-sub">{scene.subtitle}</span>
+        </div>
+      </div>
+
+      <div className="play-ui play-bottom">
+        {scene.color.kind === "single" ? (
+          <div className="play-chips" role="group" aria-label="색 고르기">
+            {scene.color.presets.map((hex) => (
+              <button
+                key={hex}
+                type="button"
+                className="play-chip"
+                style={{ background: hex }}
+                aria-label={`색 ${hex}`}
+                aria-pressed={color.toLowerCase() === hex.toLowerCase()}
+                onClick={() => pickColor(hex)}
+              />
+            ))}
+            <label className="play-chip play-chip--custom" title="직접 고르기">
+              <input type="color" value={color} onChange={(e) => pickColor(e.target.value)} aria-label="직접 고르기" />
+              <span aria-hidden="true">+</span>
+            </label>
+          </div>
+        ) : null}
+
+        <div className="play-tools">
+          <button type="button" className="play-btn play-btn--label" onClick={clear}>
+            지우기
+          </button>
+          <button
+            type="button"
+            className="play-btn play-btn--label"
+            aria-pressed={drift}
+            onClick={() => {
+              setDrift((v) => !v);
+              showUi();
+            }}
+          >
+            흐름 {drift ? "켬" : "끔"}
+          </button>
+          {scene.sound ? (
+            <button type="button" className="play-btn play-btn--label" aria-pressed={sound} onClick={toggleSound}>
+              소리 {sound ? "켬" : "끔"}
+            </button>
+          ) : null}
+          {tiltAvailable && scene.tilt !== false ? (
+            <button type="button" className="play-btn play-btn--label" aria-pressed={tilt} onClick={toggleTilt}>
+              기울기 {tilt ? "켬" : "끔"}
+            </button>
+          ) : null}
+          {canFullscreen ? (
+            <button type="button" className="play-btn play-btn--label" onClick={toggleFullscreen}>
+              {fullscreen ? "창으로" : "전체 화면"}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}

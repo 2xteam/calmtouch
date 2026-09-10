@@ -1,0 +1,66 @@
+/*
+ * ⚠️ 생성 파일 — 직접 고치지 말 것.
+ *
+ * 원본은 myjane/design/palette.json 하나다. 색을 바꾸려면 거기를 고치고
+ * myjane 에서 `npm run palette -- --write` 를 돌린다. 여섯 앱이 함께 갱신된다.
+ *
+ * 팔레트: 먹청 (Petrol)
+ * 근거: my-obsidian-vault → 20-Design/먹청 톤 팔레트.md
+ */
+
+:root {
+  --bg-primary: #f7fbfb;
+  --bg-secondary: #e8f2f3;
+  --bg-card: #ffffff;
+  --bg-elevated: #ffffff;
+  --border: rgba(17, 98, 113, 0.14);
+  --border-subtle: rgba(17, 98, 113, 0.08);
+  --text-primary: #0f2027;
+  --text-secondary: #566b70;
+  --text-muted: #5e7377;
+  --accent: #116271;
+  --accent-hover: #0d5866;
+  --accent-subtle: rgba(17, 98, 113, 0.08);
+  --accent-ink: #116271;
+  --gold-soft: rgba(201, 168, 76, 0.12);
+  --point: #c9a84c;
+  --point-subtle: rgba(201, 168, 76, 0.12);
+  --point-ink: #725c1a;
+  --progress-from: #116271;
+  --progress-to: #a8842f;
+  --gold: #c9a84c;
+  --on-accent: #ffffff;
+  --danger: #e0455f;
+  --danger-ink: #a83447;
+  --danger-subtle: rgba(224, 69, 95, 0.1);
+  --success: #2f9e74;
+  --success-ink: #2f7d3f;
+  --success-subtle: rgba(47, 158, 116, 0.12);
+  --warning: #c9a84c;
+  --input-bg: #ffffff;
+  --input-border: rgba(15, 72, 84, 0.14);
+}
+
+:root {
+  /*
+   * 테마와 무관하게 항상 같은 면들. 결쩜사 패턴의 짙은 시트와 어두운 푸터는
+   * 라이트에서도 어둡다 — 그래서 테마 토큰이 아니다.
+   *
+   * ⚠️ 이 값들을 리터럴로 다시 쓰지 말 것. 지난 두 번의 색 교체에서 가장
+   * 손이 많이 간 자리가 정확히 여기였다.
+   */
+  --sheet-dark: linear-gradient(150deg, #071c22, #0e3037 65%, #134450);
+  --sheet-dark-glow: rgba(95, 184, 201, 0.16);
+  --footer-bg: #061a1f;
+  --btn-gradient: linear-gradient(135deg, #14788a, #0d5866);
+  --btn-shadow: rgba(6, 60, 72, 0.22);
+  /* 짙은 면 위에 얹는 색 — 밝은 면용 토큰을 쓰면 2~3:1 로 떨어진다 */
+  --on-dark: #eef7f8;
+  --on-dark-dim: rgba(230, 244, 246, 0.74);
+  --on-dark-faint: rgba(230, 244, 246, 0.68);
+  --border-on-dark: rgba(150, 205, 216, 0.3);
+  --accent-on-dark: #5fb8c9;
+  --gold-on-dark: #ead58c;
+  /* 그림자 — rgba() 안에 넣어 쓴다: rgba(var(--shadow-rgb), 0.1) */
+  --shadow-rgb: 6, 34, 40;
+}
