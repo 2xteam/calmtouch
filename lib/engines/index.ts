@@ -40,6 +40,11 @@ export const ENGINES: Partial<Record<EngineKey, () => Promise<EngineFactory>>> =
   flock: () => import("./FlockEngine").then((m) => m.createFlockEngine),
   zen: () => import("./ZenEngine").then((m) => m.createZenEngine),
   breath: () => import("./BreathEngine").then((m) => m.createBreathEngine),
+  rain: () => import("./RainEngine").then((m) => m.createRainEngine),
+  balls: () => import("./BallsEngine").then((m) => m.createBallsEngine),
+  slime: () => import("./SlimeEngine").then((m) => m.createSlimeEngine),
+  cloth: () => import("./ClothEngine").then((m) => m.createClothEngine),
+  chimes: () => import("./ChimesEngine").then((m) => m.createChimesEngine),
 };
 
 export const isEngineReady = (key: EngineKey): boolean => key in ENGINES;
