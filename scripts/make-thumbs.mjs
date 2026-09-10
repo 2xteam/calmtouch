@@ -45,6 +45,16 @@ async function gesture(page, slug) {
     await m.up();
     return;
   }
+  if (slug === "slime") {
+    // 윗면을 살짝 눌러 잠긴 손가락 자국이 보이게 (끌지 않는다 — 끌면 아치가 생긴다)
+    await m.move(W * 0.5, H * 0.66); await m.down();
+    await page.waitForTimeout(450);
+    return;
+  }
+  if (slug === "breath") {
+    await page.waitForTimeout(2600); // 들이쉬는 중간
+    return;
+  }
   if (slug === "balls") {
     // 바닥에 모여 있으면 카드 아래만 찬다 — 휠로 한 번 튀어 오르게 한 뒤 찍는다
     await m.move(W / 2, H / 2);

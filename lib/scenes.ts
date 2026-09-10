@@ -20,7 +20,7 @@ export const CATEGORIES: Record<SceneCategory, { label: string; eyebrow: string;
   light: { label: "빛과 무늬", eyebrow: "LIGHT & PATTERN", lead: "별과 무늬. 흩뜨리면 제자리로, 건드리면 새 무늬로." },
   living: { label: "살아 있는 것", eyebrow: "LIVING THINGS", lead: "손끝을 피하고, 따라오고, 저희끼리 무리를 지어요." },
   things: { label: "만지는 물건", eyebrow: "THINGS TO TOUCH", lead: "공, 슬라임, 천, 모래. 손에 잡히는 감촉을 화면으로." },
-  breath: { label: "숨", eyebrow: "BREATH", lead: "화면에 숨을 맞춰요. 손을 대면 속도가 따라와요." },
+  breath: { label: "숨", eyebrow: "BREATH", lead: "색 구름이 숨에 맞춰 퍼지고 모여요. 누르고 있는 동안 들이쉬어요." },
 };
 
 export type ColorMode =
@@ -178,7 +178,7 @@ export const SCENES: Scene[] = [
     thumb: `${glow(30, 65, "rgba(95,184,201,0.9)", 14)},${glow(60, 70, "rgba(232,209,138,0.9)", 11)},${glow(78, 60, "rgba(185,166,240,0.9)", 9)},linear-gradient(170deg, #0b262e, #04161b)`,
   },
   {
-    slug: "slime", title: "슬라임", subtitle: "누르면 눌리고 당기면 늘어나요. 놓으면 출렁이다 멈춰요.",
+    slug: "slime", title: "슬라임", subtitle: "손가락이 잠기고, 끌면 붙어서 늘어나요. 놓으면 천천히 흘러 돌아와요.",
     emoji: "🫠", category: "things", engine: "slime", color: { kind: "single", defaultColor: "#7fd8b0", presets: SINGLE_PRESETS }, idleDrift: true, tilt: true,
     thumb: `${glow(50, 55, "rgba(127,216,176,0.95)", 32)},linear-gradient(170deg, #04161b, #0b262e)`,
   },
@@ -200,7 +200,7 @@ export const SCENES: Scene[] = [
 
   // ── 숨 ──────────────────────────────────────────────
   {
-    slug: "breath", title: "호흡 원", subtitle: "커지고 작아지는 원에 숨을 맞춰요. 누르고 있는 동안 들이쉬어요.",
+    slug: "breath", title: "호흡", subtitle: "숨에 맞춰 색이 퍼지고 모여요. 누르고 있는 동안 들이쉬어요.",
     emoji: "🫧", category: "breath", engine: "breath", color: { kind: "single", defaultColor: "#5fb8c9", presets: SINGLE_PRESETS }, idleDrift: false,
     thumb: `${glow(50, 50, "rgba(95,184,201,0.5)", 28)},${glow(50, 50, "rgba(95,184,201,0.3)", 45)},${DEEP}`,
   },

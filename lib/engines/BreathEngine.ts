@@ -1,33 +1,91 @@
-import { createCanvas2D, createLoop, DEEP_BG } from "@/lib/canvas/tools";
-import { clamp, damp, hexToRgb255, lerp, rgba, smoothstep, TAU } from "@/lib/util/math";
+import { FluidSim } from "@/lib/fluid/FluidSim";
+import { dyeFromHex, scaleDye } from "@/lib/fluid/color";
+import { clamp, damp, smoothstep, TAU } from "@/lib/util/math";
 import type { EngineFactory } from "./types";
+import { EngineUnsupportedError } from "./types";
 
 /**
- * 호흡 원 — 커지고 작아지는 원에 숨을 맞춘다.
+ * 호흡 — 물감 번짐과 같은 유체 위에서 숨을 쉰다.
  *
- * 가만히 두면 4초 들이쉬고 · 2초 멈추고 · 6초 내쉬는 주기로 돈다.
- * **누르고 있는 동안은 들이쉬는 쪽으로**, 놓으면 내쉬는 쪽으로 간다 — 사람의 손이 박자를 잡는다.
- * 원 둘레의 작은 점들이 숨과 함께 벌어지고 모여, 글자를 읽지 않아도 방향이 보인다.
+ * 첫 판은 원 도형 + 둘레의 점이었는데 딱딱하고 어색했다(2026-09-10 사용자 지적). 사용자가 좋다고 한
+ * "흐트러짐" 은 물감 번짐의 유체다. 그래서 가운데 색 구름을 두고 —
+ *   들이쉴 때  바깥으로 흐르는 힘 → 구름이 부드럽게 퍼진다
+ *   멈출 때    힘 없음 → 천천히 잔잔해진다
+ *   내쉴 때    안으로 모으는 힘 → 구름이 도로 모인다
+ * 손은 물감처럼 흐트린다. 누르고 있는 동안은 들이쉬기, 놓으면 내쉬기.
+ * 글자(들이쉬어요 · 멈춰요 · 내쉬어요)는 캔버스 위에 얹은 2D 캔버스에 쓴다.
  */
+const IN = 4, HOLD = 2, OUT = 6;
+const CYCLE = IN + HOLD + OUT;
+
 export const createBreathEngine: EngineFactory = (canvas, ctx0) => {
-  const c = createCanvas2D(canvas);
-  const { ctx } = c;
+  let sim: FluidSim;
+  try {
+    sim = new FluidSim(canvas, {
+      densityDissipation: 2.0,
+      velocityDissipation: 2.6,
+      pressure: 0.6,
+      curl: 2,
+      dyeClamp: 0.85,
+      splatRadius: 0.45,
+      splatForce: 4000,
+      background: { r: 0.016, g: 0.086, b: 0.106 },
+    });
+  } catch (e) {
+    throw new EngineUnsupportedError(e instanceof Error ? e.message : undefined);
+  }
   let hex = ctx0.color;
 
-  const IN = 4, HOLD = 2, OUT = 6;
-  const CYCLE = IN + HOLD + OUT;
-  let phase = 0; // 0~CYCLE
-  let level = 0.2; // 0(내쉼)~1(들이쉼) — 실제 그리는 값, 부드럽게 따라간다
-  let target = 0.2;
-  let holding = false;
-  let label = "";
-  let labelAlpha = 0;
-  let touchX = 0, touchY = 0, touchGlow = 0;
-  let cycles = 0;
-  let lastLabel = "";
+  // 글자용 오버레이 캔버스 — 플레이어 컨테이너에 얹고 dispose 때 뗀다
+  const overlay = document.createElement("canvas");
+  overlay.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;";
+  overlay.setAttribute("aria-hidden", "true");
+  canvas.parentElement?.insertBefore(overlay, canvas.nextSibling);
+  const octx = overlay.getContext("2d")!;
 
-  const loop = createLoop((dt, t) => {
-    c.resize();
+  let phase = 0;
+  let holding = false;
+  let level = 0.25; // 0(내쉼) ~ 1(들이쉼)
+  let target = 0.25;
+  let label = "";
+  let lastLabel = "";
+  let labelAlpha = 0;
+  let cycles = 0;
+  let frame = 0;
+  let lastTime = 0;
+
+  const W = () => canvas.clientWidth || 1;
+  const H = () => canvas.clientHeight || 1;
+
+  /**
+   * 가운데 구름의 숨.
+   * 구름의 **모양은 색 주입이 정한다** — 반지름이 level 을 따라 커지고 작아지는 가우시안 원반을 매 프레임
+   * 조금씩 넣고, 감쇠를 세게(2.0) 두어 옛 색이 금방 사라진다. 유체 속도장은 살랑거림과 손의 흐트러짐만 맡는다.
+   * 처음엔 중심에서 계속 넣고 흐름으로 퍼뜨렸는데, 색이 화면 전체로 흩어져 안개가 됐다.
+   */
+  const breathe = (rate: number) => {
+    const aspect = W() / H();
+    const r = 0.06 + level * 0.22;
+    const none = { r: 0, g: 0, b: 0 };
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * TAU + performance.now() * 0.00005;
+      const px = 0.5 + Math.cos(a) * r / aspect;
+      const py = 0.5 + Math.sin(a) * r;
+      // 매 프레임 더해지는 속도라 감쇠(2.6/60)와 균형이 잡히는 값이 작다 — 160 이면 평형 속도가
+      // 수천 단위가 되어 색이 화면 밖까지 쓸려 나갔다(전 판의 "안개"). 8 이면 평형이 ~120
+      const f = rate * 8;
+      sim.splat(px, py, Math.cos(a) * f, Math.sin(a) * f, none, 3.2); // 넓게 — 좁으면 내쉴 때 동심원 줄무늬가 생긴다
+    }
+    // 프레임당 상수 — FluidSim 의 감쇠도 프레임당 고정이라 실시간(dt)에 비례시키면 느린 기기에서 넘친다
+    // dyeFromHex 는 이미 최대 채널 0.15 로 정규화돼 있다 — 0.14 를 곱해 프레임당 약 0.02 가 들어간다
+    // (감쇠 2.0 과 평형을 이루면 중심 밝기 약 0.6). 0.02 를 곱했을 때는 0.003 이라 거의 보이지 않았다
+    sim.splat(0.5, 0.5, 0, 0, scaleDye(dyeFromHex(hex), 0.14), 3 + level * 9);
+  };
+
+  const tick = () => {
+    const now = performance.now();
+    const dt = Math.min((now - lastTime) / 1000, 0.05);
+    lastTime = now;
 
     if (holding) {
       target = Math.min(1, target + dt / IN);
@@ -40,94 +98,72 @@ export const createBreathEngine: EngineFactory = (canvas, ctx0) => {
     }
     if (label !== lastLabel) { labelAlpha = 0; lastLabel = label; if (label === "들이쉬어요") cycles++; }
     labelAlpha = Math.min(1, labelAlpha + dt * 2);
+    const prev = level;
     level += (target - level) * (1 - damp(3, dt));
-    touchGlow *= damp(3, dt);
-
-    ctx.fillStyle = DEEP_BG;
-    ctx.fillRect(0, 0, c.w, c.h);
-
-    const cx = c.w / 2;
-    const cy = c.h / 2 - 10;
-    const base = Math.min(c.w, c.h) * 0.16;
-    const r = base * lerp(0.75, 1.9, level);
-    const [R, G, B] = hexToRgb255(hex);
-
-    // 바깥 후광
-    const halo = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, r * 2.2);
-    halo.addColorStop(0, `rgba(${R},${G},${B},${0.22 + level * 0.12})`);
-    halo.addColorStop(1, `rgba(${R},${G},${B},0)`);
-    ctx.fillStyle = halo;
-    ctx.fillRect(0, 0, c.w, c.h);
-
-    // 본 원 — 안쪽이 밝다
-    const g = ctx.createRadialGradient(cx - r * 0.25, cy - r * 0.3, r * 0.1, cx, cy, r);
-    g.addColorStop(0, `rgba(${R},${G},${B},0.95)`);
-    g.addColorStop(0.7, `rgba(${R},${G},${B},0.55)`);
-    g.addColorStop(1, `rgba(${R},${G},${B},0.25)`);
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, TAU);
-    ctx.fillStyle = g;
-    ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = rgba(hex, 0.9);
-    ctx.stroke();
-
-    // 둘레의 점 12개 — 들이쉴 때 멀어지고 내쉴 때 붙는다
-    const orbit = r + 22 + level * 26;
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * TAU + t * 0.08;
-      const px = cx + Math.cos(a) * orbit;
-      const py = cy + Math.sin(a) * orbit;
-      ctx.beginPath();
-      ctx.arc(px, py, 2.2 + level * 1.4, 0, TAU);
-      ctx.fillStyle = rgba(hex, 0.5 + 0.4 * level);
-      ctx.fill();
-    }
-
-    // 손 닿은 자리
-    if (touchGlow > 0.01) {
-      const tg = ctx.createRadialGradient(touchX, touchY, 0, touchX, touchY, 60);
-      tg.addColorStop(0, `rgba(238,247,248,${0.35 * touchGlow})`);
-      tg.addColorStop(1, "rgba(238,247,248,0)");
-      ctx.fillStyle = tg;
-      ctx.fillRect(touchX - 60, touchY - 60, 120, 120);
-    }
+    const rate = (level - prev) / Math.max(dt, 0.001); // 초당 변화 — 양수면 들이쉬는 중
+    breathe(clamp(rate * 1.6, -0.6, 0.6));
 
     // 글자
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = `700 ${Math.round(clamp(c.w * 0.05, 18, 26))}px "Gowun Batang", serif`;
-    ctx.fillStyle = `rgba(238,247,248,${0.85 * labelAlpha})`;
-    ctx.fillText(label, cx, cy + r * 1 + 78 + level * 26);
-    ctx.font = `500 12px Pretendard, "Noto Sans KR", sans-serif`;
-    ctx.fillStyle = "rgba(230,244,246,0.5)";
-    ctx.fillText(holding ? "누르고 있는 동안 들이쉬어요 · 놓으면 내쉬어요" : `${cycles}번째 숨 · 누르면 손이 박자를 잡아요`, cx, c.h - 96);
-  });
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = W(), h = H();
+    if (overlay.width !== Math.floor(w * dpr) || overlay.height !== Math.floor(h * dpr)) {
+      overlay.width = Math.floor(w * dpr); overlay.height = Math.floor(h * dpr);
+    }
+    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    octx.clearRect(0, 0, w, h);
+    octx.textAlign = "center";
+    octx.textBaseline = "middle";
+    octx.font = `700 ${Math.round(clamp(w * 0.05, 18, 26))}px "Gowun Batang", serif`;
+    octx.fillStyle = `rgba(238,247,248,${0.8 * labelAlpha})`;
+    octx.shadowColor = "rgba(0,20,26,0.8)"; octx.shadowBlur = 12;
+    octx.fillText(label, w / 2, h - 150);
+    octx.shadowBlur = 0;
+    octx.font = `500 12px Pretendard, "Noto Sans KR", sans-serif`;
+    octx.fillStyle = "rgba(230,244,246,0.55)";
+    octx.fillText(holding ? "누르고 있는 동안 들이쉬어요 · 놓으면 내쉬어요" : `${cycles}번째 숨 · 누르면 손이 박자를 잡아요`, w / 2, h - 108);
+
+    frame = requestAnimationFrame(tick);
+  };
 
   return {
-    start: () => loop.start(),
-    stop: () => loop.stop(),
-    dispose: () => loop.stop(),
+    start() {
+      lastTime = performance.now();
+      sim.start();
+      if (!frame) frame = requestAnimationFrame(tick);
+    },
+    stop() {
+      sim.stop();
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+    },
+    dispose() {
+      sim.dispose();
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+      overlay.remove();
+    },
     pointerDown(x, y) {
       holding = true;
-      touchX = x; touchY = y; touchGlow = 1;
-      // 누르기 시작하면 지금 크기에서 이어서 들이쉰다
       target = level;
+      sim.splat(x / W(), 1 - y / H(), 0, 0, scaleDye(dyeFromHex(hex), 0.25), 1.4);
     },
-    pointerMove(x, y, _dx, _dy, _id, pressed) {
-      if (pressed) { touchX = x; touchY = y; touchGlow = Math.max(touchGlow, 0.6); }
+    pointerMove(x, y, dx, dy) {
+      // 물감 번짐처럼 흐트린다 — 색은 조금만
+      if (dx === 0 && dy === 0) return;
+      sim.splatPointer(x, y, dx, dy, scaleDye(dyeFromHex(hex), 0.18));
     },
     pointerUp() {
       if (!holding) return;
       holding = false;
-      // 놓은 순간부터 내쉬기 구간으로 이어 붙인다
-      phase = IN + HOLD + (1 - (level - 0.15) / 0.85) * OUT;
-      phase = clamp(phase, IN + HOLD, CYCLE - 0.01);
+      phase = clamp(IN + HOLD + (1 - (level - 0.15) / 0.85) * OUT, IN + HOLD, CYCLE - 0.01);
     },
-    wheel() {},
+    wheel(x, y, delta) {
+      sim.splatPointer(x, y, 0, delta * 0.5, scaleDye(dyeFromHex(hex), 0.3));
+    },
     tilt() {},
     idle() {},
     clear() {
+      sim.clearDye();
       cycles = 0;
       phase = 0;
     },
