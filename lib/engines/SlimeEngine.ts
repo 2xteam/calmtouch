@@ -1,21 +1,19 @@
 import { createCanvas2D, createLoop, DEEP_BG } from "@/lib/canvas/tools";
-import { clamp, damp, hexToRgb255, lerp, rand, TAU } from "@/lib/util/math";
+import { clamp, damp, hexToRgb255, lerp, noise2, rand, TAU } from "@/lib/util/math";
 import type { EngineFactory } from "./types";
 
 /**
- * 슬라임 — 탁자 위에 놓인 점성 덩어리.
+ * 슬라임 — 화면 가운데에 위에서 내려다본 점성 덩어리. 지름은 화면 짧은 변의 약 2/5.
  *
- * 첫 판은 스프링으로 묶은 공이어서 "튕기는 젤리" 였다(2026-09-10 사용자 지적). 진짜 슬라임은
- *   · 무거워서 바닥에 퍼져 있고,
- *   · 누르면 손가락이 **잠기고** 옆이 불룩해지며,
- *   · 손에 **붙어서** 끌면 가늘게 늘어나고,
- *   · 놓으면 튕기지 않고 **천천히 흘러** 제 모양으로 돌아온다.
- * 그래서 둘레 96점을 두고 — 탄성은 약하게, 점성(이웃 속도 평균) 과 감쇠는 세게, 부피 보존은 강하게,
- * 바닥 접촉은 마찰 크게. 복원은 스프링이 아니라 "느린 기어가기" 로.
- *
- * 겉은 반투명 젤 — 위쪽 넓은 하이라이트, 윗가장자리 얇은 빛, 안에 갇힌 기포, 바닥 그림자.
+ * 세 번째 판(2026-09-10). 첫 판은 튕기는 젤리, 둘째 판은 탁자 위 옆모습이었는데 아래에 몰려 보였다.
+ * 지금은 —
+ *   · 가운데에 놓여 **스스로 물컹거린다** (둘레 목표 반지름에 느린 노이즈)
+ *   · 누르면 손가락이 **잠기고** 옆이 불룩해진다 (부피 보존)
+ *   · 끌면 **붙어서** 늘어나고, 놓으면 튕기지 않고 **천천히 흘러** 돌아온다
+ *   · 기울이면 그쪽으로 조금 늘어진다
+ * 둘레 96점 · 약한 탄성 · 센 점성(이웃 속도 평균)과 감쇠 · 매 프레임 둘레 재배치.
  */
-type Node = { x: number; y: number; vx: number; vy: number; rx: number; ry: number };
+type Node = { x: number; y: number; vx: number; vy: number };
 type Finger = { x: number; y: number; vx: number; vy: number; pressed: boolean; at: number };
 
 export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
@@ -24,35 +22,30 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
   let hex = ctx0.color;
 
   const N = 96;
-  const nodes: Node[] = [];
-  let floorY = 0;
+  let nodes: Node[] = [];
   let radius = 100;
   let restArea = 0;
   let restPerimeter = 0;
-  let tiltX = 0;
+  let tilt = { x: 0, y: 0 };
   const bubbles: { u: number; v: number; r: number; drift: number }[] = [];
 
+  const center = () => ({ x: c.w / 2, y: c.h / 2 });
+
   const spawn = () => {
-    nodes.length = 0;
-    radius = Math.min(c.w, c.h) * 0.24;
-    floorY = c.h * 0.78;
-    const cx = c.w / 2;
-    const cy = floorY - radius * 0.62;
+    nodes = [];
+    radius = Math.min(c.w, c.h) * 0.19;
+    const { x: cx, y: cy } = center();
     for (let i = 0; i < N; i++) {
       const a = (i / N) * TAU;
-      // 납작한 타원 — 이미 퍼져 있는 모양
-      const rx = Math.cos(a) * radius * 1.15;
-      const ry = Math.sin(a) * radius * 0.62;
-      nodes.push({ x: cx + rx, y: Math.min(cy + ry, floorY), vx: 0, vy: 0, rx, ry });
+      nodes.push({ x: cx + Math.cos(a) * radius, y: cy + Math.sin(a) * radius, vx: 0, vy: 0 });
     }
     restArea = area();
-    restPerimeter = 0;
-    for (let i = 0; i < N; i++) {
-      const a = nodes[i], b = nodes[(i + 1) % N];
-      restPerimeter += Math.hypot(b.x - a.x, b.y - a.y);
-    }
+    restPerimeter = TAU * radius;
     bubbles.length = 0;
-    for (let i = 0; i < 16; i++) bubbles.push({ u: rand(0.12, 0.88), v: rand(0.2, 0.9), r: rand(1.5, 5), drift: rand(0, TAU) });
+    for (let i = 0; i < 18; i++) {
+      const a = rand(0, TAU), rr = Math.sqrt(Math.random()) * 0.8;
+      bubbles.push({ u: 0.5 + Math.cos(a) * rr * 0.5, v: 0.5 + Math.sin(a) * rr * 0.5, r: rand(1.5, 5), drift: rand(0, TAU) });
+    }
   };
   const area = () => {
     let s = 0;
@@ -65,9 +58,9 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
   spawn();
 
   const fingers = new Map<number, Finger>();
-  const FINGER_R = 20;
+  const FINGER_R = 22;
 
-  /** 현재 다각형을 따라 N 점을 같은 간격으로 다시 놓는다. 속도는 선형 보간 */
+  /** 현재 다각형을 따라 N 점을 같은 간격으로 다시 놓는다 — 늘어났다 돌아온 자리의 뭉침·꼬임이 사라진다 */
   const resample = () => {
     const segs: number[] = [];
     let total = 0;
@@ -85,9 +78,9 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
       while (along + segs[seg] < target && seg < N - 1) { along += segs[seg]; seg++; }
       const a = nodes[seg], b = nodes[(seg + 1) % N];
       const t = segs[seg] > 0 ? (target - along) / segs[seg] : 0;
-      out.push({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), vx: lerp(a.vx, b.vx, t), vy: lerp(a.vy, b.vy, t), rx: a.rx, ry: a.ry });
+      out.push({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), vx: lerp(a.vx, b.vx, t), vy: lerp(a.vy, b.vy, t) });
     }
-    for (let i = 0; i < N; i++) nodes[i] = out[i];
+    nodes = out;
   };
 
   const loop = createLoop((dt, t) => {
@@ -95,25 +88,26 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
     const h = Math.min(dt, 1 / 45);
     const sub = 5;
     const hs = h / sub;
-    tiltX *= damp(1.5, dt);
+    tilt.x *= damp(1.2, dt);
+    tilt.y *= damp(1.2, dt);
     const now = performance.now();
     for (const [id, f] of fingers) if (id === 0 && !f.pressed && now - f.at > 600) fingers.delete(id);
+    const { x: cx0, y: cy0 } = center();
+    // 기울이면 그쪽으로 조금 늘어진다
+    const restX = cx0 + tilt.x * radius * 0.35, restY = cy0 + tilt.y * radius * 0.35;
 
     for (let s = 0; s < sub; s++) {
       let cx = 0, cy = 0;
       for (const n of nodes) { cx += n.x; cy += n.y; }
       cx /= N; cy /= N;
       const A = area();
-      // 부피 보존 — 눌리면 옆으로 불룩. 강하게
       const pressureK = clamp((restArea - A) / restArea, -0.6, 0.6) * 9000;
       const restLen = restPerimeter / N;
 
       for (let i = 0; i < N; i++) {
         const n = nodes[i];
         const l = nodes[(i + N - 1) % N], r = nodes[(i + 1) % N];
-        let ax = tiltX * 260;
-        let ay = 650; // 무겁다
-
+        let ax = 0, ay = 0;
         // 둘레 스프링 — 약하다. 슬라임은 잘 늘어난다
         for (const o of [l, r]) {
           const dx = o.x - n.x, dy = o.y - n.y;
@@ -128,34 +122,31 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
         const nx = (r.y - l.y), ny = -(r.x - l.x);
         const nl = Math.hypot(nx, ny) || 0.001;
         ax += (nx / nl) * pressureK; ay += (ny / nl) * pressureK;
-        // 느린 기어가기 — 제 모양(납작한 타원)으로. 스프링이 아니라 속도에 직접 (튕기지 않는다)
+        // 느린 기어가기 — 제 모양(살짝 물컹거리는 원)으로. 속도에 직접 (튕기지 않는다)
         const ang = Math.atan2(n.y - cy, n.x - cx);
-        const tx = c.w / 2 + Math.cos(ang) * radius * 1.15;
-        const ty = Math.min(floorY - radius * 0.62 + Math.sin(ang) * radius * 0.62, floorY);
-        n.vx += (tx - n.x) * 0.9 * hs;
-        n.vy += (ty - n.y) * 0.9 * hs;
-
+        const wobble = 1 + noise2(Math.cos(ang) * 1.3 + t * 0.35, Math.sin(ang) * 1.3 - t * 0.27) * 0.07;
+        const tx = restX + Math.cos(ang) * radius * wobble;
+        const ty = restY + Math.sin(ang) * radius * wobble;
+        n.vx += (tx - n.x) * 1.1 * hs;
+        n.vy += (ty - n.y) * 1.1 * hs;
         n.vx += ax * hs; n.vy += ay * hs;
       }
 
       // 손가락 — 잠기고, 붙는다
       for (const f of fingers.values()) {
-        const reach = radius * 0.6;
+        const reach = radius * 0.7;
         for (const n of nodes) {
           const dx = n.x - f.x, dy = n.y - f.y;
           const d = Math.hypot(dx, dy) || 0.001;
           if (d > reach) continue;
-          const w = (1 - d / reach);
+          const w = 1 - d / reach;
           if (f.pressed) {
-            // 붙어서 손을 따라온다 (가까울수록 세게)
             const k = w * w * 0.85;
             n.vx = lerp(n.vx, f.vx, k);
             n.vy = lerp(n.vy, f.vy, k);
           } else {
-            // 누르지 않은 마우스는 살짝 스치기만
             n.vx += f.vx * w * 0.15; n.vy += f.vy * w * 0.15;
           }
-          // 손가락 몸통 안으로는 못 들어온다 — 잠긴 자리(dent)
           if (d < FINGER_R) {
             const push = FINGER_R - d;
             n.x += (dx / d) * push; n.y += (dy / d) * push;
@@ -164,7 +155,7 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
         }
       }
 
-      // 이웃이 아닌 점끼리 최소 간격 — 바닥에 쌓일 때 둘레가 자기 자신과 겹쳐 고리가 생기지 않게
+      // 이웃이 아닌 점끼리 최소 간격 — 둘레가 자기 자신과 겹치지 않게
       const minD = restLen * 0.9;
       for (let i = 0; i < N; i++) {
         const a = nodes[i];
@@ -192,89 +183,65 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
       for (let i = 0; i < N; i++) {
         const n = nodes[i];
         n.vx = vxs[i] * dampK; n.vy = vys[i] * dampK;
-        n.x += n.vx * hs; n.y += n.vy * hs;
-        // 바닥 — 붙고 마찰이 크다
-        if (n.y > floorY) { n.y = floorY; n.vy = 0; n.vx *= 0.6; }
-        n.x = clamp(n.x, 6, c.w - 6);
-        n.y = Math.max(n.y, 6);
+        n.x = clamp(n.x + n.vx * hs, 6, c.w - 6);
+        n.y = clamp(n.y + n.vy * hs, 6, c.h - 6);
       }
     }
 
-    // 둘레를 호 길이 기준으로 고르게 다시 배치 — 늘어났다 돌아온 자리의 뭉침·꼬임이 사라진다
     resample();
-    // 위치 스무딩 — 울퉁불퉁한 봉우리를 눌러 매끈한 곡선으로
     for (let k = 0; k < 2; k++) {
       const sx = new Float32Array(N), sy = new Float32Array(N);
       for (let i = 0; i < N; i++) {
         const l = nodes[(i + N - 1) % N], r = nodes[(i + 1) % N], n = nodes[i];
         sx[i] = lerp(n.x, (l.x + r.x) / 2, 0.25); sy[i] = lerp(n.y, (l.y + r.y) / 2, 0.25);
       }
-      for (let i = 0; i < N; i++) { nodes[i].x = sx[i]; nodes[i].y = Math.min(sy[i], floorY); }
+      for (let i = 0; i < N; i++) { nodes[i].x = sx[i]; nodes[i].y = sy[i]; }
     }
 
-    // ── 그리기 ──
+    // ── 그리기 (위에서 내려다본 젤) ──
     const [R, G, B] = hexToRgb255(hex);
-    const bg = ctx.createLinearGradient(0, 0, 0, c.h);
+    const bg = ctx.createRadialGradient(c.w / 2, c.h / 2, 0, c.w / 2, c.h / 2, Math.max(c.w, c.h) * 0.75);
     bg.addColorStop(0, "#0b262e");
-    bg.addColorStop(0.78, DEEP_BG);
-    bg.addColorStop(0.781, "#0d2a32");
-    bg.addColorStop(1, "#071c22");
+    bg.addColorStop(1, DEEP_BG);
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, c.w, c.h);
-    // 탁자 면 — 아주 옅은 빛
-    const tg = ctx.createLinearGradient(0, floorY, 0, c.h);
-    tg.addColorStop(0, "rgba(95,184,201,0.10)");
-    tg.addColorStop(1, "rgba(95,184,201,0)");
-    ctx.fillStyle = tg;
-    ctx.fillRect(0, floorY, c.w, c.h - floorY);
 
-    // 경계 상자 · 중심
     let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
     for (const n of nodes) { if (n.x < minX) minX = n.x; if (n.x > maxX) maxX = n.x; if (n.y < minY) minY = n.y; if (n.y > maxY) maxY = n.y; }
     const bw = Math.max(1, maxX - minX), bh = Math.max(1, maxY - minY);
-    const midX = (minX + maxX) / 2;
+    const midX = (minX + maxX) / 2, midY = (minY + maxY) / 2;
 
-    // 바닥 그림자 · 비침
-    const sg = ctx.createRadialGradient(midX, floorY + 4, 0, midX, floorY + 4, bw * 0.55);
-    sg.addColorStop(0, `rgba(${R * 0.2 | 0},${G * 0.25 | 0},${B * 0.25 | 0},0.55)`);
-    sg.addColorStop(1, "rgba(0,10,14,0)");
-    ctx.save();
-    ctx.translate(midX, floorY + 4); ctx.scale(1, 0.18); ctx.translate(-midX, -(floorY + 4));
-    ctx.fillStyle = sg;
-    ctx.fillRect(midX - bw, floorY + 4 - bw, bw * 2, bw * 2);
-    ctx.restore();
-
-    // 몸 — 부드러운 폐곡선
-    const tracePath = () => {
+    const tracePath = (ox = 0, oy = 0) => {
       ctx.beginPath();
       for (let i = 0; i < N; i++) {
         const a = nodes[i], b = nodes[(i + 1) % N];
-        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-        if (i === 0) ctx.moveTo(mx, my); else ctx.quadraticCurveTo(a.x, a.y, mx, my);
+        const mx = (a.x + b.x) / 2 + ox, my = (a.y + b.y) / 2 + oy;
+        if (i === 0) ctx.moveTo(mx, my); else ctx.quadraticCurveTo(a.x + ox, a.y + oy, mx, my);
       }
       const a0 = nodes[0], b0 = nodes[1];
-      ctx.quadraticCurveTo(a0.x, a0.y, (a0.x + b0.x) / 2, (a0.y + b0.y) / 2);
+      ctx.quadraticCurveTo(a0.x + ox, a0.y + oy, (a0.x + b0.x) / 2 + ox, (a0.y + b0.y) / 2 + oy);
       ctx.closePath();
     };
+
+    // 그림자 — 오른쪽 아래로 살짝, 부드럽게 (같은 모양을 조금 밀어서 여러 겹)
+    for (let k = 3; k >= 1; k--) {
+      tracePath(k * 4, k * 6);
+      ctx.fillStyle = `rgba(0, 10, 14, ${0.10 * k})`;
+      ctx.fill();
+    }
+
+    // 몸 — 가운데가 살짝 밝고 가장자리가 진한 젤
     tracePath();
-    const bodyG = ctx.createLinearGradient(0, minY, 0, maxY);
-    bodyG.addColorStop(0, `rgba(${Math.min(255, R + 40)},${Math.min(255, G + 40)},${Math.min(255, B + 40)},0.92)`);
-    bodyG.addColorStop(0.55, `rgba(${R},${G},${B},0.86)`);
-    bodyG.addColorStop(1, `rgba(${R * 0.55 | 0},${G * 0.6 | 0},${B * 0.6 | 0},0.95)`);
+    const bodyG = ctx.createRadialGradient(midX - bw * 0.12, midY - bh * 0.14, bw * 0.05, midX, midY, Math.max(bw, bh) * 0.6);
+    bodyG.addColorStop(0, `rgba(${Math.min(255, R + 45)},${Math.min(255, G + 45)},${Math.min(255, B + 45)},0.94)`);
+    bodyG.addColorStop(0.65, `rgba(${R},${G},${B},0.9)`);
+    bodyG.addColorStop(1, `rgba(${R * 0.5 | 0},${G * 0.55 | 0},${B * 0.55 | 0},0.96)`);
     ctx.fillStyle = bodyG;
     ctx.fill();
 
-    // 안쪽 — 클립해서 기포 · 하이라이트 · 손가락 자국
     ctx.save();
     ctx.clip();
-    // 깊이 — 가장자리로 갈수록 진하게 (안쪽이 밝은 젤)
-    const inner = ctx.createRadialGradient(midX, minY + bh * 0.45, bh * 0.1, midX, minY + bh * 0.5, bw * 0.55);
-    inner.addColorStop(0, "rgba(255,255,255,0.10)");
-    inner.addColorStop(0.7, "rgba(0,0,0,0)");
-    inner.addColorStop(1, `rgba(${R * 0.3 | 0},${G * 0.3 | 0},${B * 0.3 | 0},0.45)`);
-    ctx.fillStyle = inner;
-    ctx.fillRect(minX, minY, bw, bh);
-    // 기포 — 몸이 늘어나면 같이 늘어난다
+    // 기포
     for (const bb of bubbles) {
       const bx = minX + bw * bb.u + Math.sin(t * 0.4 + bb.drift) * 2;
       const by = minY + bh * bb.v + Math.cos(t * 0.3 + bb.drift) * 1.5;
@@ -284,13 +251,13 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
       ctx.fillStyle = "rgba(255,255,255,0.45)"; ctx.fill();
     }
     // 큰 하이라이트 — 왼쪽 위
-    const hl = ctx.createRadialGradient(minX + bw * 0.3, minY + bh * 0.22, 0, minX + bw * 0.3, minY + bh * 0.25, bw * 0.28);
+    const hl = ctx.createRadialGradient(minX + bw * 0.32, minY + bh * 0.26, 0, minX + bw * 0.32, minY + bh * 0.28, bw * 0.3);
     hl.addColorStop(0, "rgba(255,255,255,0.55)");
     hl.addColorStop(0.5, "rgba(255,255,255,0.12)");
     hl.addColorStop(1, "rgba(255,255,255,0)");
     ctx.fillStyle = hl;
     ctx.fillRect(minX, minY, bw, bh);
-    // 손가락 자국 — 눌린 자리는 진하고 둘레가 밝다
+    // 손가락 자국
     for (const f of fingers.values()) {
       if (!f.pressed) continue;
       const dg = ctx.createRadialGradient(f.x, f.y, FINGER_R * 0.4, f.x, f.y, FINGER_R * 2.2);
@@ -302,13 +269,13 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
     }
     ctx.restore();
 
-    // 윗가장자리 얇은 빛 · 아래 가장자리 진한 선
+    // 가장자리 — 왼쪽 위는 얇은 빛, 오른쪽 아래는 진한 선
     tracePath();
     ctx.lineWidth = 2;
-    const rim = ctx.createLinearGradient(0, minY, 0, maxY);
-    rim.addColorStop(0, "rgba(255,255,255,0.75)");
-    rim.addColorStop(0.35, "rgba(255,255,255,0.15)");
-    rim.addColorStop(1, `rgba(${R * 0.3 | 0},${G * 0.3 | 0},${B * 0.3 | 0},0.8)`);
+    const rim = ctx.createLinearGradient(minX, minY, maxX, maxY);
+    rim.addColorStop(0, "rgba(255,255,255,0.7)");
+    rim.addColorStop(0.5, "rgba(255,255,255,0.12)");
+    rim.addColorStop(1, `rgba(${R * 0.3 | 0},${G * 0.3 | 0},${B * 0.3 | 0},0.85)`);
     ctx.strokeStyle = rim;
     ctx.stroke();
   });
@@ -328,7 +295,6 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
       setFinger(id, x, y, 0, 0, true);
     },
     pointerMove(x, y, dx, dy, id, pressed) {
-      // 속도는 너무 크지 않게 — 슬라임은 손을 완전히 따라오지 못한다
       const sp = Math.hypot(dx, dy);
       const k = sp > 18 ? 18 / sp : 1;
       setFinger(id, x, y, dx * k, dy * k, pressed);
@@ -339,16 +305,18 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
       if (id !== 0) fingers.delete(id);
     },
     wheel(_x, _y, delta) {
-      // 위로 밀면 살짝 들린다
       for (const n of nodes) n.vy -= delta * 3;
     },
-    tilt(fx) {
-      tiltX = fx;
+    tilt(fx, fy) {
+      tilt = { x: fx, y: fy };
     },
     idle() {
-      // 저절로 아주 조금 출렁 — 살아 있다는 신호
+      // 저절로 한 번 물컹 — 한쪽을 살짝 밀어 넣는다
       const i = Math.floor(Math.random() * N);
-      nodes[i].vy -= 90;
+      const n = nodes[i];
+      const { x: cx, y: cy } = center();
+      const d = Math.hypot(n.x - cx, n.y - cy) || 1;
+      n.vx -= ((n.x - cx) / d) * 120; n.vy -= ((n.y - cy) / d) * 120;
     },
     clear() {
       spawn();

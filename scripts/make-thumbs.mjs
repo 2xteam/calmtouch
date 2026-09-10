@@ -47,7 +47,7 @@ async function gesture(page, slug) {
   }
   if (slug === "slime") {
     // 윗면을 살짝 눌러 잠긴 손가락 자국이 보이게 (끌지 않는다 — 끌면 아치가 생긴다)
-    await m.move(W * 0.5, H * 0.66); await m.down();
+    await m.move(W * 0.5, H * 0.5); await m.down();
     await page.waitForTimeout(450);
     return;
   }
