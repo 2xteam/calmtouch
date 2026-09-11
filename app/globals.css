@@ -838,48 +838,65 @@ a {
   cursor: crosshair;
 }
 
-.play-ui {
+/* 상단 줄 — 왼쪽 뒤로, 오른쪽 도구. 항상 보인다(저절로 숨지 않는다). 나머지는 도구 패널 안 */
+.play-bar {
   position: absolute;
+  top: 0;
   left: 0;
   right: 0;
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 10px;
-  padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 14px;
-  transition: opacity 0.35s ease, transform 0.35s ease;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 12px 0;
   pointer-events: none;
 }
 
-.play-ui > * {
+.play-bar > * {
   pointer-events: auto;
 }
 
-.play-top {
-  top: 0;
+.play-fab[aria-expanded="true"] {
+  background: rgba(238, 247, 248, 0.16);
+  border-color: var(--on-dark);
 }
 
-.play-bottom {
-  bottom: 0;
-  flex-direction: column;
-  align-items: stretch;
-  padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+/* 도구 패널 — 도구 버튼 아래 떠 있는 카드 */
+.play-panel {
+  position: absolute;
+  top: calc(60px + env(safe-area-inset-top, 0px));
+  right: 12px;
+  width: min(340px, calc(100vw - 24px));
+  max-height: calc(100vh - 80px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(6, 26, 31, 0.8);
+  border: 1px solid var(--border-on-dark);
+  box-shadow: 0 18px 44px rgba(0, 12, 16, 0.45);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transform-origin: top right;
+  transition: opacity 0.22s ease, transform 0.22s ease, visibility 0.22s;
 }
 
-.play[data-ui="hidden"] .play-ui {
+.play-panel[data-open="no"] {
   opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px) scale(0.96);
   pointer-events: none;
 }
 
-.play[data-ui="hidden"] .play-ui > * {
-  pointer-events: none;
+.play-panel .play-title-name,
+.play-panel .play-title-sub {
+  text-shadow: none;
 }
 
-.play[data-ui="hidden"] .play-top {
-  transform: translateY(-8px);
-}
-
-.play[data-ui="hidden"] .play-bottom {
-  transform: translateY(8px);
+.play-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .play-title {
@@ -936,8 +953,7 @@ a {
 
 /* 기울기 안내 — 도구 바 위 한 줄 */
 .play-note {
-  margin: 0 auto 10px;
-  max-width: 420px;
+  margin: 0;
   padding: 8px 14px;
   border-radius: 999px;
   background: rgba(6, 26, 31, 0.7);
@@ -945,10 +961,7 @@ a {
   color: var(--on-dark);
   font-size: 12px;
   line-height: 1.5;
-  text-align: center;
   word-break: keep-all;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
 }
 
 /* 켬/끔 스위치 — 꺼지면 흐리고 켜지면 진하다. 손잡이가 오른쪽으로 가면 켜진 것 */
@@ -1036,16 +1049,13 @@ a {
 .play-tools {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
   gap: 8px;
 }
 
 .play-chips {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
   gap: 10px;
-  margin-bottom: 12px;
 }
 
 .play-chip {

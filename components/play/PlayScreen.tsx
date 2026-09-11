@@ -18,7 +18,8 @@ import type { Scene } from "@/lib/scenes";
  * 손을 움직이는 내내 버튼이 떠 있으면 화면을 만지는 느낌이 깨진다.
  */
 
-const UI_HIDE_MS = 3000;
+/** 도구 패널 열림 상태를 기억하는 키 — 기기마다 한 번 정하면 그대로 */
+const PANEL_KEY = "calmtouch:panel";
 const IDLE_BEFORE_DRIFT_MS = 2200;
 const DRIFT_EVERY_MS = 1700;
 const TILT_EVERY_MS = 120;
@@ -33,7 +34,8 @@ export function PlayScreen({ scene }: { scene: Scene }) {
 
   const [status, setStatus] = useState<Status>("loading");
   const [reason, setReason] = useState<string>("");
-  const [uiVisible, setUiVisible] = useState(true);
+  /** 도구 패널 — 처음엔 접혀 있고, 연 채로 나가면 다음에도 열려 있다 */
+  const [panelOpen, setPanelOpen] = useState(false);
   const [drift, setDrift] = useState(scene.idleDrift);
   const [tilt, setTilt] = useState(false);
   const [tiltAvailable, setTiltAvailable] = useState(false);
@@ -52,11 +54,11 @@ export function PlayScreen({ scene }: { scene: Scene }) {
     settings.current = { drift, tilt };
   }, [drift, tilt]);
 
-  const hideTimer = useRef<number | null>(null);
-  const showUi = useCallback(() => {
-    setUiVisible(true);
-    if (hideTimer.current) window.clearTimeout(hideTimer.current);
-    hideTimer.current = window.setTimeout(() => setUiVisible(false), UI_HIDE_MS);
+  const togglePanel = useCallback(() => {
+    setPanelOpen((v) => {
+      try { window.localStorage.setItem(PANEL_KEY, v ? "0" : "1"); } catch { /* 시크릿 모드 등 */ }
+      return !v;
+    });
   }, []);
 
   const tiltBase = useRef<{ beta: number; gamma: number } | null>(null);
@@ -72,11 +74,11 @@ export function PlayScreen({ scene }: { scene: Scene }) {
     }
     setColorReady(true);
     rememberRecent(scene.slug);
-    showUi();
-    return () => {
-      if (hideTimer.current) window.clearTimeout(hideTimer.current);
-    };
-  }, [scene, showUi]);
+    try { setPanelOpen(window.localStorage.getItem(PANEL_KEY) === "1"); } catch { /* ignore */ }
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPanelOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [scene]);
 
   // ── 엔진 로드 · 입력 연결 ────────────────────────────────
   useEffect(() => {
@@ -121,7 +123,6 @@ export function PlayScreen({ scene }: { scene: Scene }) {
           pressed.add(id);
           last.set(id, { x, y });
           lastActive = performance.now();
-          showUi();
           engine!.pointerDown(x, y, id);
         };
         const onMove = (e: PointerEvent) => {
@@ -226,7 +227,7 @@ export function PlayScreen({ scene }: { scene: Scene }) {
     };
     // color 는 처음 값만 넘기고 이후는 setColor 로 전달한다
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [colorReady, scene, showUi]);
+  }, [colorReady, scene]);
 
   // ── 전체 화면 ─────────────────────────────────────────────
   useEffect(() => {
@@ -244,11 +245,9 @@ export function PlayScreen({ scene }: { scene: Scene }) {
     } catch {
       /* iOS Safari 는 requestFullscreen 이 없다 — 홈 화면에 추가하면 standalone 으로 뜬다 */
     }
-    showUi();
   };
 
   const toggleTilt = async () => {
-    showUi();
     if (tilt) {
       setTilt(false);
       setTiltNote("");
@@ -288,19 +287,16 @@ export function PlayScreen({ scene }: { scene: Scene }) {
     setColor(hex);
     saveColor(scene.slug, hex);
     engineRef.current?.setColor?.(hex);
-    showUi();
   };
 
   const toggleSound = () => {
     const next = !sound;
     setSound(next);
     engineRef.current?.setSound?.(next);
-    showUi();
   };
 
   const clear = () => {
     engineRef.current?.clear();
-    showUi();
   };
 
   /**
@@ -315,7 +311,7 @@ export function PlayScreen({ scene }: { scene: Scene }) {
   };
 
   return (
-    <div ref={rootRef} className="play" data-ui={uiVisible ? "shown" : "hidden"}>
+    <div ref={rootRef} className="play">
       <canvas ref={canvasRef} className="play-canvas" aria-label={`${scene.title} 장면`} />
 
       {status === "no" ? (
@@ -329,19 +325,49 @@ export function PlayScreen({ scene }: { scene: Scene }) {
         </div>
       ) : null}
 
-      <div className="play-ui play-top">
+      <div className="play-bar">
         <button type="button" className="play-btn" aria-label="장면 목록으로" onClick={goBack}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
+        <button
+          type="button"
+          className="play-btn play-fab"
+          aria-label={panelOpen ? "도구 닫기" : "도구 열기"}
+          aria-expanded={panelOpen}
+          aria-controls="play-panel"
+          onClick={togglePanel}
+        >
+          {panelOpen ? (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+            </svg>
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+              <circle cx="9" cy="7" r="2.2" fill="var(--footer-bg)" stroke="currentColor" strokeWidth="2" />
+              <circle cx="15" cy="12" r="2.2" fill="var(--footer-bg)" stroke="currentColor" strokeWidth="2" />
+              <circle cx="10" cy="17" r="2.2" fill="var(--footer-bg)" stroke="currentColor" strokeWidth="2" />
+            </svg>
+          )}
+        </button>
+      </div>
+
+      {/* 도구 패널 — 떠 있는 카드. 열고 닫는 건 오직 사용자다 (저절로 숨지 않는다 · 2026-09-11 사용자 지적) */}
+      <section id="play-panel" className="play-panel" data-open={panelOpen ? "yes" : "no"} aria-hidden={!panelOpen} aria-label="장면 도구">
         <div className="play-title">
           <span className="play-title-name">{scene.title}</span>
           <span className="play-title-sub">{scene.subtitle}</span>
         </div>
-      </div>
 
-      <div className="play-ui play-bottom">
+        <div className="play-tools">
+          <Toggle label="흐름" on={drift} onClick={() => setDrift((v) => !v)} />
+          {scene.sound ? <Toggle label="소리" on={sound} onClick={toggleSound} /> : null}
+          {tiltAvailable && scene.tilt !== false ? <Toggle label="기울기" on={tilt} onClick={toggleTilt} /> : null}
+        </div>
+        {tiltNote ? <p className="play-note">{tiltNote}</p> : null}
+
         {scene.color.kind === "single" ? (
           <div className="play-chips" role="group" aria-label="색 고르기">
             {scene.color.presets.map((hex) => (
@@ -362,28 +388,17 @@ export function PlayScreen({ scene }: { scene: Scene }) {
           </div>
         ) : null}
 
-        {tiltNote ? <p className="play-note">{tiltNote}</p> : null}
-        <div className="play-tools">
+        <div className="play-actions">
           <button type="button" className="play-btn play-btn--label" onClick={clear}>
             지우기
           </button>
-          <Toggle
-            label="흐름"
-            on={drift}
-            onClick={() => {
-              setDrift((v) => !v);
-              showUi();
-            }}
-          />
-          {scene.sound ? <Toggle label="소리" on={sound} onClick={toggleSound} /> : null}
-          {tiltAvailable && scene.tilt !== false ? <Toggle label="기울기" on={tilt} onClick={toggleTilt} /> : null}
           {canFullscreen ? (
             <button type="button" className="play-btn play-btn--label" onClick={toggleFullscreen}>
               {fullscreen ? "창으로" : "전체 화면"}
             </button>
           ) : null}
         </div>
-      </div>
+      </section>
     </div>
   );
 }

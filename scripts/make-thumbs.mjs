@@ -47,7 +47,9 @@ async function gesture(page, slug) {
   }
   if (slug === "slime") {
     // 색 하나를 골라 옆에 덩어리가 생긴 채, 윗면을 살짝 눌러 잠긴 자국이 보이게 (끌지 않는다 — 끌면 아치가 생긴다)
+    await page.getByRole("button", { name: "도구 열기" }).click().catch(() => {});
     await page.locator(".play-chip").nth(3).click().catch(() => {});
+    await page.getByRole("button", { name: "도구 닫기" }).click().catch(() => {});
     await page.waitForTimeout(400);
     await m.move(W * 0.5, H * 0.5); await m.down();
     await page.waitForTimeout(450);
