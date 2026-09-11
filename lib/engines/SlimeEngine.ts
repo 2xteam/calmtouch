@@ -220,11 +220,21 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
       const pm = pointOnRay(a, rNorm * rand(1.05, 1.35)), pn = pointOnRay(b, rNorm * rand(1.05, 1.35));
       const poly: [number, number][] = [[cr.u, cr.v], pa, pm, pn, pb];
       eraseWax(poly);
-      const sx = minX + cr.u * bw, sy = minY + cr.v * bh;
-      const pts: [number, number][] = poly.map(([px, py]) => [(px - cr.u) * bw, (py - cr.v) * bh]);
+      // 떨어져 나간 조각은 날아가지 않고 **그 자리에 얹힌다** — 조금 밀리고 돌아간 채로. 문지르면 점토에 갈려 섞인다
       const mid = pointOnRay(a, rNorm * 0.6);
       const dir = Math.atan2(mid[1] - cr.v, mid[0] - cr.u);
-      chips.push({ pts, x: sx, y: sy, vx: Math.cos(dir) * rand(40, 110), vy: Math.sin(dir) * rand(40, 110) + 60, rot: 0, vr: rand(-3, 3), life: 1 });
+      const shift = rNorm * rand(0.15, 0.45);
+      mctx.save();
+      mctx.globalCompositeOperation = "source-over";
+      mctx.translate((cr.u + Math.cos(dir) * shift) * TEX, (cr.v + Math.sin(dir) * shift) * TEX);
+      mctx.rotate(rand(-0.5, 0.5));
+      mctx.fillStyle = `rgba(${WAX_RGB.join(",")}, 0.96)`;
+      mctx.beginPath();
+      poly.forEach(([px, py], j) => (j === 0 ? mctx.moveTo((px - cr.u) * TEX, (py - cr.v) * TEX) : mctx.lineTo((px - cr.u) * TEX, (py - cr.v) * TEX)));
+      mctx.closePath();
+      mctx.fill();
+      mctx.strokeStyle = "rgba(70,48,32,0.5)"; mctx.lineWidth = 1.5; mctx.stroke();
+      mctx.restore();
       any = true;
     }
     if (any && sound) crackle(0.9);
@@ -245,8 +255,12 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
       wctx.globalCompositeOperation = "source-over";
     }
     const ang = Math.atan2(dy, dx);
+    // 손가락 아래 놓인 조각을 갈아 낸다 — 국소적으로 옅어지며 결로 번진다
+    mctx.globalCompositeOperation = "destination-out";
+    mctx.fillStyle = "rgba(0,0,0,0.22)";
+    mctx.beginPath(); mctx.ellipse(u * TEX, v * TEX, r * TEX * 1.5, r * TEX * 1.5 * (bw / bh), 0, 0, TAU); mctx.fill();
     mctx.globalCompositeOperation = "source-over";
-    mctx.fillStyle = `rgba(${WAX_RGB.join(",")}, ${0.5 * (1 - mix)})`;
+    mctx.fillStyle = `rgba(${WAX_RGB.join(",")}, ${0.35 * (1 - mix)})`;
     mctx.save();
     mctx.translate(u * TEX, v * TEX); mctx.rotate(ang);
     mctx.beginPath(); mctx.ellipse(0, 0, r * TEX * 1.4, r * TEX * 0.45, 0, 0, TAU); mctx.fill();
@@ -255,11 +269,7 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
     mctx.fillStyle = `rgba(0,0,0,${clamp((mix - before) * 6, 0, 0.08)})`;
     mctx.fillRect(0, 0, TEX, TEX);
     mctx.globalCompositeOperation = "source-over";
-    if (Math.random() < 0.14 && mix < 0.98) {
-      const s = rand(3, 6);
-      chips.push({ pts: [[-s, -s * 0.6], [s, -s * 0.4], [s * 0.6, s], [-s * 0.5, s * 0.7]], x, y, vx: rand(-60, 60), vy: rand(-40, 20), rot: rand(0, TAU), vr: rand(-6, 6), life: 0.45 });
-      if (sound && Math.random() < 0.3) crackle(0.25);
-    }
+    if (sound && Math.random() < 0.06) crackle(0.25);
   };
 
   const loop = createLoop((dt, t) => {
@@ -278,7 +288,7 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
     for (let i = dents.length - 1; i >= 0; i--) {
       const d = dents[i];
       if (d.held) d.depth = Math.min(1, d.depth + dt / 0.35);
-      else { d.depth -= dt / (clay ? 40 : 1.5); if (d.depth <= 0) { dents.splice(i, 1); continue; } }
+      else if (!clay) { d.depth -= dt / 2.5; if (d.depth <= 0) { dents.splice(i, 1); continue; } }
     }
     if (clay && dents.length > 40) dents.splice(0, dents.length - 40);
 
@@ -303,38 +313,44 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
       }
     }
 
-    for (let s = 0; s < sub; s++) {
+    // 점토는 손이 닿아 있을 때만 움직인다. 떼면 그 모양 그대로 굳는다 — 흐느적거림이 없다
+    const touching = [...fingers.values()].some((f) => f.pressed);
+    const simSteps = clay && !touching ? 0 : sub;
+    if (clay && !touching) for (const n of nodes) { n.vx = 0; n.vy = 0; }
+
+    for (let s = 0; s < simSteps; s++) {
       let cx = 0, cy = 0;
       for (const n of nodes) { cx += n.x; cy += n.y; }
       cx /= N; cy /= N;
       const A = area();
-      const pressureK = clamp((restArea - A) / restArea, -0.6, 0.6) * 9000;
+      const pressureK = clamp((restArea - A) / restArea, -0.6, 0.6) * (clay ? 3000 : 9000);
       const restLen = restPerimeter / N;
-      const wobbleAmp = clay ? 0 : wax ? 0.025 : 0.07;
+      const wobbleAmp = clay ? 0 : wax ? 0.025 : 0.04;
 
       for (let i = 0; i < N; i++) {
         const n = nodes[i];
         const l = nodes[(i + N - 1) % N], r = nodes[(i + 1) % N];
         let ax = 0, ay = 0;
+        const springK = clay ? 6 : 18, bendK = clay ? 14 : 70;
         for (const o of [l, r]) {
           const dx = o.x - n.x, dy = o.y - n.y;
           const d = Math.hypot(dx, dy) || 0.001;
-          ax += (dx / d) * (d - restLen) * 18; ay += (dy / d) * (d - restLen) * 18;
+          ax += (dx / d) * (d - restLen) * springK; ay += (dy / d) * (d - restLen) * springK;
         }
-        ax += ((l.x + r.x) / 2 - n.x) * 70;
-        ay += ((l.y + r.y) / 2 - n.y) * 70;
+        ax += ((l.x + r.x) / 2 - n.x) * bendK;
+        ay += ((l.y + r.y) / 2 - n.y) * bendK;
         const nx = (r.y - l.y), ny = -(r.x - l.x);
         const nl = Math.hypot(nx, ny) || 0.001;
         ax += (nx / nl) * pressureK; ay += (ny / nl) * pressureK;
         if (clay) {
           // 점토 — 모양 기억이 없다. 무게중심만 화면 가운데로 아주 약하게
-          n.vx += (restX - cx) * 0.6 * hs; n.vy += (restY - cy) * 0.6 * hs;
+          void restX; void restY; void cx; void cy;
         } else {
           const ang = Math.atan2(n.y - cy, n.x - cx);
           const wobble = 1 + noise2(Math.cos(ang) * 1.3 + t * 0.35, Math.sin(ang) * 1.3 - t * 0.27) * wobbleAmp;
           const tx = restX + Math.cos(ang) * radius * wobble;
           const ty = restY + Math.sin(ang) * radius * wobble;
-          n.vx += (tx - n.x) * 1.1 * hs; n.vy += (ty - n.y) * 1.1 * hs;
+          n.vx += (tx - n.x) * 0.7 * hs; n.vy += (ty - n.y) * 0.7 * hs;
         }
         for (const d of dents) {
           const dx = n.x - d.x, dy = n.y - d.y;
@@ -377,9 +393,9 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
       const vxs = new Float32Array(N), vys = new Float32Array(N);
       for (let i = 0; i < N; i++) {
         const l = nodes[(i + N - 1) % N], r = nodes[(i + 1) % N], n = nodes[i];
-        vxs[i] = n.vx * 0.4 + (l.vx + r.vx) * 0.3; vys[i] = n.vy * 0.4 + (l.vy + r.vy) * 0.3;
+        vxs[i] = n.vx * 0.2 + (l.vx + r.vx) * 0.4; vys[i] = n.vy * 0.2 + (l.vy + r.vy) * 0.4;
       }
-      const dampK = Math.exp(-(clay ? 8 : 5.5) * hs);
+      const dampK = Math.exp(-(clay ? 26 : 10) * hs); // 슬라임 점도 ↑ (2026-09-11 사용자: 너무 흐느적)
       for (let i = 0; i < N; i++) {
         const n = nodes[i];
         n.vx = vxs[i] * dampK; n.vy = vys[i] * dampK;
@@ -387,14 +403,17 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
       }
     }
 
-    resample();
-    for (let k = 0; k < 2; k++) {
-      const sx = new Float32Array(N), sy = new Float32Array(N);
-      for (let i = 0; i < N; i++) {
-        const l = nodes[(i + N - 1) % N], r = nodes[(i + 1) % N], n = nodes[i];
-        sx[i] = lerp(n.x, (l.x + r.x) / 2, 0.25); sy[i] = lerp(n.y, (l.y + r.y) / 2, 0.25);
+    if (simSteps > 0) {
+      resample();
+      const passes = clay ? 1 : 2, amt = clay ? 0.12 : 0.25;
+      for (let k = 0; k < passes; k++) {
+        const sx = new Float32Array(N), sy = new Float32Array(N);
+        for (let i = 0; i < N; i++) {
+          const l = nodes[(i + N - 1) % N], r = nodes[(i + 1) % N], n = nodes[i];
+          sx[i] = lerp(n.x, (l.x + r.x) / 2, amt); sy[i] = lerp(n.y, (l.y + r.y) / 2, amt);
+        }
+        for (let i = 0; i < N; i++) { nodes[i].x = sx[i]; nodes[i].y = sy[i]; }
       }
-      for (let i = 0; i < N; i++) { nodes[i].x = sx[i]; nodes[i].y = sy[i]; }
     }
 
     // ── 그리기 ──
@@ -422,16 +441,19 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
       ctx.closePath();
     };
 
-    // 접촉 그림자 — 덩어리 바로 밑에 부드럽게 (멀리 떨어진 그림자는 "떠 있는 판" 으로 보인다)
-    ctx.save();
-    ctx.shadowColor = "rgba(0, 10, 14, 0.75)";
-    ctx.shadowBlur = big * 0.10;
-    ctx.shadowOffsetX = big * 0.012;
-    ctx.shadowOffsetY = big * 0.028;
-    tracePath();
-    ctx.fillStyle = `rgb(${R * 0.45 | 0},${G * 0.5 | 0},${B * 0.5 | 0})`;
-    ctx.fill();
-    ctx.restore();
+    // 접촉 그림자 — 덩어리 바로 밑에 부드럽게. shadowBlur 는 큰 도형에서 매 프레임 가우시안 블러라
+    // 폰·소프트웨어 렌더러에서 너무 느리다 → 같은 모양을 조금씩 키워 옅게 여러 겹 겹친다
+    for (let k = 6; k >= 1; k--) {
+      const sc = 1 + k * 0.014;
+      ctx.save();
+      ctx.translate(midX + big * 0.012, midY + big * 0.03);
+      ctx.scale(sc, sc);
+      ctx.translate(-midX, -midY);
+      tracePath();
+      ctx.fillStyle = `rgba(0, 10, 14, ${0.09})`;
+      ctx.fill();
+      ctx.restore();
+    }
 
     // 몸 — 가운데는 두꺼워 진하고 밝게, 가장자리는 얇아 어둡고 살짝 비친다(돔)
     tracePath();

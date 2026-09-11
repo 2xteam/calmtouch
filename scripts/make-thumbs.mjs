@@ -73,7 +73,14 @@ async function gesture(page, slug) {
     await page.waitForTimeout(420);
     return;
   }
-  if (slug === "cloth" || slug === "chimes" || slug === "breath" || slug === "lava" || slug === "flock") {
+  if (slug === "cloth") {
+    // 잡아끌지 않고 손으로 스치듯 — 바람처럼 흔들린 모습
+    await m.move(W * 0.2, H * 0.5);
+    for (let i = 0; i < 24; i++) await m.move(W * 0.2 + i * 18, H * 0.5 + Math.sin(i / 4) * 40, { steps: 2 });
+    await page.waitForTimeout(700);
+    return;
+  }
+  if (slug === "chimes" || slug === "breath" || slug === "lava" || slug === "flock") {
     await m.move(W * 0.3, H * 0.5); await m.down();
     await m.move(W * 0.55, H * 0.45, { steps: 20 });
     await m.up();
@@ -104,7 +111,14 @@ for (const slug of slugs) {
   await gesture(page, slug);
   await page.waitForTimeout(SETTLE[slug] ?? 900);
   const png = path.join(OUT, `${slug}.png`);
-  await page.screenshot({ path: png });
+  try {
+    await page.screenshot({ path: png, timeout: 15000 });
+  } catch {
+    // 헤드리스에서 스크린샷이 컴포지터를 기다리다 멈추는 일이 있다 — 캔버스를 직접 뽑는다
+    const data = await page.evaluate(() => document.querySelector("canvas.play-canvas").toDataURL("image/png"));
+    writeFileSync(png, Buffer.from(data.split(",")[1], "base64"));
+    console.log(`  (${slug}: screenshot 대신 canvas 덤프)`);
+  }
   const webp = path.join(OUT, `${slug}.webp`);
   await sharp(png).webp({ quality: 78 }).toFile(webp);
   unlinkSync(png);
