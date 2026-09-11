@@ -906,6 +906,88 @@ a {
   -webkit-backdrop-filter: blur(10px);
 }
 
+/* 켬/끔 스위치 — 꺼지면 흐리고 켜지면 진하다. 손잡이가 오른쪽으로 가면 켜진 것 */
+.play-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-on-dark);
+  background: rgba(6, 26, 31, 0.55);
+  color: var(--on-dark);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+}
+
+.play-toggle[aria-checked="false"] {
+  opacity: 0.55;
+  color: var(--on-dark-dim);
+}
+
+.play-toggle[aria-checked="true"] {
+  border-color: rgba(95, 184, 201, 0.7);
+  background: rgba(17, 98, 113, 0.55);
+  box-shadow: 0 0 0 1px rgba(95, 184, 201, 0.25), 0 6px 18px rgba(95, 184, 201, 0.18);
+}
+
+.play-toggle:hover {
+  opacity: 1;
+}
+
+.play-toggle-track {
+  position: relative;
+  width: 30px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(238, 247, 248, 0.18);
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+}
+
+.play-toggle[aria-checked="true"] .play-toggle-track {
+  background: var(--accent-on-dark);
+}
+
+.play-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--on-dark);
+  box-shadow: 0 1px 3px rgba(0, 10, 14, 0.5);
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.2s ease;
+}
+
+.play-toggle[aria-checked="false"] .play-toggle-knob {
+  background: rgba(238, 247, 248, 0.7);
+}
+
+.play-toggle[aria-checked="true"] .play-toggle-knob {
+  transform: translateX(12px);
+  background: #ffffff;
+}
+
+.play-toggle-label {
+  letter-spacing: -0.2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .play-toggle,
+  .play-toggle-track,
+  .play-toggle-knob {
+    transition: none;
+  }
+}
+
 .play-tools {
   display: flex;
   flex-wrap: wrap;

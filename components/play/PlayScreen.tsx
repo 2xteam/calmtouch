@@ -354,27 +354,16 @@ export function PlayScreen({ scene }: { scene: Scene }) {
           <button type="button" className="play-btn play-btn--label" onClick={clear}>
             지우기
           </button>
-          <button
-            type="button"
-            className="play-btn play-btn--label"
-            aria-pressed={drift}
+          <Toggle
+            label="흐름"
+            on={drift}
             onClick={() => {
               setDrift((v) => !v);
               showUi();
             }}
-          >
-            흐름 {drift ? "켬" : "끔"}
-          </button>
-          {scene.sound ? (
-            <button type="button" className="play-btn play-btn--label" aria-pressed={sound} onClick={toggleSound}>
-              소리 {sound ? "켬" : "끔"}
-            </button>
-          ) : null}
-          {tiltAvailable && scene.tilt !== false ? (
-            <button type="button" className="play-btn play-btn--label" aria-pressed={tilt} onClick={toggleTilt}>
-              기울기 {tilt ? "켬" : "끔"}
-            </button>
-          ) : null}
+          />
+          {scene.sound ? <Toggle label="소리" on={sound} onClick={toggleSound} /> : null}
+          {tiltAvailable && scene.tilt !== false ? <Toggle label="기울기" on={tilt} onClick={toggleTilt} /> : null}
           {canFullscreen ? (
             <button type="button" className="play-btn play-btn--label" onClick={toggleFullscreen}>
               {fullscreen ? "창으로" : "전체 화면"}
@@ -383,5 +372,20 @@ export function PlayScreen({ scene }: { scene: Scene }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * 켬/끔 스위치 — 켜지면 진하게, 꺼지면 흐리게. 상태는 색이 아니라 **손잡이 자리와 밝기**로도 읽힌다.
+ * 글자에 "켬/끔" 을 붙이지 않는다 — 스위치가 그 말을 대신한다.
+ */
+function Toggle({ label, on, onClick }: { label: string; on: boolean; onClick: () => void }) {
+  return (
+    <button type="button" className="play-toggle" role="switch" aria-checked={on} onClick={onClick}>
+      <span className="play-toggle-track" aria-hidden="true">
+        <span className="play-toggle-knob" />
+      </span>
+      <span className="play-toggle-label">{label}</span>
+    </button>
   );
 }
