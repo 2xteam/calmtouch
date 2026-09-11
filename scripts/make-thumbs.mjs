@@ -51,6 +51,13 @@ async function gesture(page, slug) {
     await page.waitForTimeout(450);
     return;
   }
+  if (slug === "wax") {
+    // 세 군데를 꾹 눌러 껍질이 갈라진 모습
+    for (const [x, y] of [[W * 0.5, H * 0.5], [W * 0.38, H * 0.38], [W * 0.62, H * 0.6]]) {
+      await m.move(x, y); await m.down(); await page.waitForTimeout(650); await m.up(); await page.waitForTimeout(150);
+    }
+    return;
+  }
   if (slug === "breath") {
     await page.waitForTimeout(2600); // 들이쉬는 중간
     return;

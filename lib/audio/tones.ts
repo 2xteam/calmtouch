@@ -69,5 +69,37 @@ export function thud(pitch = 180, vel = 0.5) {
   osc.stop(now + 0.3);
 }
 
+/**
+ * 바삭 — 굳은 왁스가 갈라지는 소리. 짧은 잡음 알갱이 서너 개를 띄엄띄엄.
+ * 왁뿌(왁스 뿌시기 볼) 장면. strength 0~1
+ */
+export function crackle(strength = 0.6) {
+  const c = ensureAudio();
+  if (!c || !master) return;
+  const now = c.currentTime;
+  const pops = 3 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < pops; i++) {
+    const len = 0.012 + Math.random() * 0.02;
+    const buf = c.createBuffer(1, Math.ceil(c.sampleRate * len), c.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let j = 0; j < data.length; j++) {
+      const env = 1 - j / data.length;
+      data[j] = (Math.random() * 2 - 1) * env * env;
+    }
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    const bp = c.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.value = 1800 + Math.random() * 2600;
+    bp.Q.value = 1.2;
+    const g = c.createGain();
+    g.gain.value = Math.max(0.0001, strength * (0.5 + Math.random() * 0.5) * 0.9);
+    src.connect(bp).connect(g).connect(master);
+    const at = now + i * (0.02 + Math.random() * 0.05);
+    src.start(at);
+    src.stop(at + len + 0.01);
+  }
+}
+
 /** 펜타토닉 한 옥타브 — 윈드차임 관 다섯 개 */
 export const PENTATONIC = [523.25, 587.33, 659.25, 783.99, 880.0];

@@ -178,9 +178,15 @@ export const SCENES: Scene[] = [
     thumb: `${glow(30, 65, "rgba(95,184,201,0.9)", 14)},${glow(60, 70, "rgba(232,209,138,0.9)", 11)},${glow(78, 60, "rgba(185,166,240,0.9)", 9)},linear-gradient(170deg, #0b262e, #04161b)`,
   },
   {
-    slug: "slime", title: "슬라임", subtitle: "손가락이 잠기고, 끌면 붙어서 늘어나요. 놓으면 천천히 흘러 돌아와요.",
+    slug: "slime", title: "슬라임", subtitle: "꾹 누르면 잠기고, 끌면 붙어서 늘어나요. 놓으면 천천히 흘러 돌아와요.",
     emoji: "🫠", category: "things", engine: "slime", color: { kind: "single", defaultColor: "#7fd8b0", presets: SINGLE_PRESETS }, idleDrift: true, tilt: true,
     thumb: `${glow(50, 55, "rgba(127,216,176,0.95)", 32)},linear-gradient(170deg, #04161b, #0b262e)`,
+  },
+  {
+    slug: "wax", title: "왁뿌", subtitle: "굳은 왁스 껍질을 꾹 누르면 바삭 갈라지고, 속의 슬라임이 드러나요.",
+    emoji: "🥚", category: "things", engine: "slime", color: { kind: "single", defaultColor: "#f08ca4", presets: SINGLE_PRESETS }, idleDrift: true, tilt: true, sound: true,
+    params: { wax: true },
+    thumb: `${glow(50, 50, "rgba(239,233,220,0.95)", 34)},${glow(50, 50, "rgba(240,140,164,0.6)", 40)},linear-gradient(170deg, #04161b, #0b262e)`,
   },
   {
     slug: "cloth", title: "천 커튼", subtitle: "바람에 흔들리는 얇은 천. 손으로 젖히면 되돌아와요.",
