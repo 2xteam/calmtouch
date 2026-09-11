@@ -46,7 +46,9 @@ async function gesture(page, slug) {
     return;
   }
   if (slug === "slime") {
-    // 윗면을 살짝 눌러 잠긴 손가락 자국이 보이게 (끌지 않는다 — 끌면 아치가 생긴다)
+    // 색 하나를 골라 옆에 덩어리가 생긴 채, 윗면을 살짝 눌러 잠긴 자국이 보이게 (끌지 않는다 — 끌면 아치가 생긴다)
+    await page.locator(".play-chip").nth(3).click().catch(() => {});
+    await page.waitForTimeout(400);
     await m.move(W * 0.5, H * 0.5); await m.down();
     await page.waitForTimeout(450);
     return;
@@ -61,6 +63,21 @@ async function gesture(page, slug) {
     await m.move(W / 2 + Math.cos(2.6) * S, H / 2 + Math.sin(2.6) * S); await m.down();
     for (let i = 0; i < 10; i++) await m.move(W / 2 + Math.cos(2.6 + i * 0.05) * S, H / 2 + Math.sin(2.6 + i * 0.05) * S + Math.sin(i) * 8, { steps: 2 });
     await m.up();
+    return;
+  }
+  if (slug === "rainbow") {
+    // 줄 하나를 눌러 휘게
+    await m.move(W * 0.3, H * 0.62); await m.down();
+    for (let i = 0; i < 12; i++) await m.move(W * 0.3 + i * 6, H * 0.62 - i * 5, { steps: 2 });
+    await page.waitForTimeout(120);
+    return;
+  }
+  if (slug === "blocks") {
+    // 공을 몰아 블록 더미를 뚫고 지나간 직후
+    await m.move(W * 0.5, H * 0.9); await m.down();
+    for (let i = 0; i < 26; i++) await m.move(W * 0.5 + Math.sin(i / 4) * 30, H * 0.9 - i * 22, { steps: 2 });
+    await m.up();
+    await page.waitForTimeout(500);
     return;
   }
   if (slug === "breath") {

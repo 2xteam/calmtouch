@@ -593,6 +593,51 @@ a {
   margin-top: 20px;
 }
 
+/* 카테고리 줄 — 옆으로 미는 카드. 시트 안쪽 여백을 뚫고 가장자리까지 닿게 음수 여백을 준다 */
+.scene-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.scene-row-count {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.scene-row {
+  --row-pad: clamp(22px, 5vw, 32px);
+  display: flex;
+  gap: 14px;
+  margin-top: 10px;
+  margin-inline: calc(-1 * var(--row-pad));
+  padding: 4px var(--row-pad) 10px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: var(--row-pad);
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.scene-row::-webkit-scrollbar {
+  display: none;
+}
+
+.scene-row-item {
+  flex: 0 0 min(72vw, 236px);
+  scroll-snap-align: start;
+  display: flex;
+}
+
+.scene-row-item .scene-card {
+  flex: 1;
+}
+
 .scene-card {
   display: flex;
   flex-direction: column;

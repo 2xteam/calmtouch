@@ -19,7 +19,7 @@ export const CATEGORIES: Record<SceneCategory, { label: string; eyebrow: string;
   surface: { label: "물과 유리", eyebrow: "WATER & GLASS", lead: "수면과 유리창. 만진 자리가 잠깐 바뀌고 다시 돌아와요." },
   light: { label: "빛과 무늬", eyebrow: "LIGHT & PATTERN", lead: "별과 무늬. 흩뜨리면 제자리로, 건드리면 새 무늬로." },
   living: { label: "살아 있는 것", eyebrow: "LIVING THINGS", lead: "손끝을 피하고, 따라오고, 저희끼리 무리를 지어요." },
-  things: { label: "만지는 물건", eyebrow: "THINGS TO TOUCH", lead: "공, 슬라임, 천, 모래. 손에 잡히는 감촉을 화면으로." },
+  things: { label: "만지는 물건", eyebrow: "THINGS TO TOUCH", lead: "공, 슬라임, 천, 블록. 손에 잡히는 감촉을 화면으로." },
   breath: { label: "숨", eyebrow: "BREATH", lead: "색 구름이 숨에 맞춰 퍼지고 모여요. 누르고 있는 동안 들이쉬어요." },
 };
 
@@ -153,6 +153,11 @@ export const SCENES: Scene[] = [
     emoji: "🐚", category: "light", engine: "reaction", color: { kind: "single", defaultColor: "#5fb8c9", presets: SINGLE_PRESETS }, idleDrift: true,
     thumb: `repeating-radial-gradient(circle at 40% 50%, rgba(95,184,201,0.6) 0 6px, transparent 6px 16px),linear-gradient(170deg, #04161b, #0e3037)`,
   },
+  {
+    slug: "rainbow", title: "무지개", subtitle: "밤 언덕 위 점선 무지개. 손이 닿으면 줄이 휘고, 놓으면 튕겨 돌아와요. 휠로 줄을 늘려요.",
+    emoji: "🌈", category: "light", engine: "rainbow", color: { kind: "rainbow" }, idleDrift: true, tilt: true,
+    thumb: `${glow(50, 70, "rgba(255,80,120,0.7)", 40)},${glow(50, 60, "rgba(120,140,255,0.7)", 44)},linear-gradient(180deg, #04161b, #0b1a2e)`,
+  },
 
   // ── 살아 있는 것 ─────────────────────────────────────
   {
@@ -186,6 +191,11 @@ export const SCENES: Scene[] = [
     slug: "wax", title: "왁뿌", subtitle: "파스텔 왁스를 입힌 도넛. 꾹 누르면 껍질이 조각조각 갈라지고, 문지르면 속 점토와 섞여요.",
     emoji: "🍩", category: "things", engine: "wax", color: { kind: "palette", colors: ["#f6b7cf", "#b9d7f2", "#f7ecb0"] }, idleDrift: false, tilt: true, sound: true,
     thumb: `${glow(50, 50, "rgba(246,183,207,0.9)", 34)},${glow(70, 40, "rgba(185,215,242,0.8)", 30)},linear-gradient(170deg, #04161b, #0b262e)`,
+  },
+  {
+    slug: "blocks", title: "블록 놀이", subtitle: "공을 몰아 쌓인 나무 블록을 밀어요. 미끄러지고 돌아가고, 기울이면 다 쏟아져요.",
+    emoji: "🧱", category: "things", engine: "blocks", color: { kind: "palette", colors: ["#f6b7cf", "#b9d7f2", "#f7ecb0", "#c7ecd2"] }, idleDrift: false, tilt: true, sound: true,
+    thumb: `${glow(45, 45, "rgba(246,183,207,0.8)", 26)},${glow(60, 55, "rgba(185,215,242,0.8)", 26)},linear-gradient(170deg, #04161b, #0f3038)`,
   },
   {
     slug: "cloth", title: "천 커튼", subtitle: "바람에 흔들리는 얇은 천. 손으로 젖히면 되돌아와요.",

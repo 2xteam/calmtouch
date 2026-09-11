@@ -57,6 +57,19 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
   marble.width = TEX; marble.height = TEX;
   const mctx = marble.getContext("2d")!;
 
+  /**
+   * 속살 색 — (u,v) 캔버스. 색을 고르면 그 색의 작은 덩어리가 옆에 생기고, 끌어다 본체에 붙이면
+   * 여기 번진다. 문지르면 손가락 방향으로 끌려 섞인다 (2026-09-11 사용자 요청 · 슬라임만)
+   */
+  const TINT = 512;
+  const tint = document.createElement("canvas"); tint.width = TINT; tint.height = TINT;
+  const tctx = tint.getContext("2d")!;
+  const bodyC = document.createElement("canvas"); const bctx = bodyC.getContext("2d")!;
+  type Blob = { x: number; y: number; r: number; hex: string; vx: number; vy: number; grab: number | null; born: number };
+  const blobs: Blob[] = [];
+  const grabbed = new Map<number, Blob>();
+  const resetTint = () => { tctx.globalCompositeOperation = "source-over"; tctx.globalAlpha = 1; tctx.fillStyle = hex; tctx.fillRect(0, 0, TINT, TINT); };
+
   const recoat = () => {
     wctx.globalCompositeOperation = "source-over";
     wctx.clearRect(0, 0, TEX, TEX);
@@ -99,6 +112,10 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
       bubbles.push({ u: 0.5 + Math.cos(a) * rr * 0.5, v: 0.5 + Math.sin(a) * rr * 0.5, r: rand(2, 8), drift: rand(0, TAU) });
     }
     dents.length = 0;
+    blobs.length = 0; grabbed.clear();
+    resetTint();
+    bodyC.width = Math.max(1, Math.floor(c.w * c.dpr)); bodyC.height = Math.max(1, Math.floor(c.h * c.dpr));
+    bctx.setTransform(c.dpr, 0, 0, c.dpr, 0, 0);
     if (wax) recoat();
   };
   const area = () => {
@@ -436,58 +453,70 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
     const midX = (minX + maxX) / 2, midY = (minY + maxY) / 2;
     const big = Math.max(bw, bh);
 
-    const tracePath = () => {
-      ctx.beginPath();
+    const traceInto = (g: CanvasRenderingContext2D) => {
+      g.beginPath();
       for (let i = 0; i < N; i++) {
         const a = nodes[i], b = nodes[(i + 1) % N];
         const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-        if (i === 0) ctx.moveTo(mx, my); else ctx.quadraticCurveTo(a.x, a.y, mx, my);
+        if (i === 0) g.moveTo(mx, my); else g.quadraticCurveTo(a.x, a.y, mx, my);
       }
       const a0 = nodes[0], b0 = nodes[1];
-      ctx.quadraticCurveTo(a0.x, a0.y, (a0.x + b0.x) / 2, (a0.y + b0.y) / 2);
-      ctx.closePath();
+      g.quadraticCurveTo(a0.x, a0.y, (a0.x + b0.x) / 2, (a0.y + b0.y) / 2);
+      g.closePath();
     };
+    const tracePath = () => traceInto(ctx);
 
     // 접촉 그림자 — 덩어리 바로 밑에 부드럽게. shadowBlur 는 큰 도형에서 매 프레임 가우시안 블러라
     // 폰·소프트웨어 렌더러에서 너무 느리다 → 같은 모양을 조금씩 키워 옅게 여러 겹 겹친다
-    for (let k = 6; k >= 1; k--) {
-      const sc = 1 + k * 0.014;
+    for (let k = 14; k >= 1; k--) {
+      const sc = 1 + k * 0.006;
       ctx.save();
       ctx.translate(midX + big * 0.012, midY + big * 0.03);
       ctx.scale(sc, sc);
       ctx.translate(-midX, -midY);
       tracePath();
-      ctx.fillStyle = `rgba(0, 10, 14, ${0.09})`;
+      ctx.fillStyle = "rgba(0, 10, 14, 0.04)";
       ctx.fill();
       ctx.restore();
     }
 
-    // 몸 — 가운데는 두꺼워 진하고 밝게, 가장자리는 얇아 어둡고 살짝 비친다(돔)
+    // 몸 — 속살 색(tint)을 몸 모양으로 자르고, 그 위에 빛을 얹는다: 가운데는 두꺼워 밝고 가장자리는 얇아 어둡고 비친다(돔)
     tracePath();
-    const bodyG = ctx.createRadialGradient(midX - bw * 0.08, midY - bh * 0.10, big * 0.05, midX, midY, big * 0.58);
+    bctx.globalCompositeOperation = "source-over";
+    bctx.clearRect(0, 0, c.w, c.h);
+    bctx.save(); traceInto(bctx); bctx.clip();
+    bctx.drawImage(tint, minX, minY, bw, bh);
+    bctx.restore();
+    const lightG = bctx.createRadialGradient(midX - bw * 0.08, midY - bh * 0.1, big * 0.05, midX, midY, big * 0.58);
     if (clay) {
-      bodyG.addColorStop(0, `rgba(${Math.min(255, R + 28)},${Math.min(255, G + 28)},${Math.min(255, B + 28)},1)`);
-      bodyG.addColorStop(0.7, `rgba(${R},${G},${B},1)`);
-      bodyG.addColorStop(1, `rgba(${R * 0.62 | 0},${G * 0.64 | 0},${B * 0.64 | 0},1)`);
+      lightG.addColorStop(0, "rgba(255,255,255,0.14)"); lightG.addColorStop(0.7, "rgba(255,255,255,0)"); lightG.addColorStop(1, "rgba(0,10,14,0.38)");
     } else {
-      bodyG.addColorStop(0, `rgba(${Math.min(255, R + 40)},${Math.min(255, G + 40)},${Math.min(255, B + 40)},0.98)`);
-      bodyG.addColorStop(0.55, `rgba(${R},${G},${B},0.94)`);
-      bodyG.addColorStop(0.86, `rgba(${R * 0.78 | 0},${G * 0.82 | 0},${B * 0.82 | 0},0.86)`);
-      bodyG.addColorStop(1, `rgba(${R * 0.5 | 0},${G * 0.56 | 0},${B * 0.56 | 0},0.72)`);
+      lightG.addColorStop(0, "rgba(255,255,255,0.2)"); lightG.addColorStop(0.55, "rgba(255,255,255,0)");
+      lightG.addColorStop(0.86, "rgba(0,14,18,0.2)"); lightG.addColorStop(1, "rgba(0,14,18,0.5)");
     }
-    ctx.fillStyle = bodyG;
-    ctx.fill();
+    bctx.globalCompositeOperation = "source-atop";
+    bctx.fillStyle = lightG; bctx.fillRect(minX - 2, minY - 2, bw + 4, bh + 4);
+    if (!clay) {
+      const alphaG = bctx.createRadialGradient(midX - bw * 0.08, midY - bh * 0.1, big * 0.05, midX, midY, big * 0.58);
+      alphaG.addColorStop(0, "rgba(0,0,0,0.98)"); alphaG.addColorStop(0.55, "rgba(0,0,0,0.94)");
+      alphaG.addColorStop(0.86, "rgba(0,0,0,0.86)"); alphaG.addColorStop(1, "rgba(0,0,0,0.72)");
+      bctx.globalCompositeOperation = "destination-in";
+      bctx.fillStyle = alphaG; bctx.fillRect(minX - 2, minY - 2, bw + 4, bh + 4);
+    }
+    bctx.globalCompositeOperation = "source-over";
+    ctx.drawImage(bodyC, 0, 0, c.w, c.h);
 
     ctx.save();
     ctx.clip();
     // 메니스커스 — 가장자리 안쪽으로 서서히 어두워지는 띠. 선 하나로 그리면 접시 테두리처럼 보여서
     // 폭이 다른 옅은 선을 여러 겹 얹어 가장자리로 갈수록 짙어지게 한다 (두께가 얇아지는 곳)
     tracePath();
-    const layers = 7;
+    // 겹이 눈에 띄지 않게 스물두 겹을 아주 옅게 (2026-09-11 사용자: "여섯 겹으로 쌓인 게 보여요")
+    const layers = 22;
     for (let k = 0; k < layers; k++) {
       const f = k / (layers - 1);
       ctx.lineWidth = big * (clay ? 0.09 : 0.14) * (1 - f) + 2;
-      ctx.strokeStyle = `rgba(${R * 0.3 | 0},${G * 0.35 | 0},${B * 0.35 | 0},${(clay ? 0.05 : 0.075) + f * 0.03})`;
+      ctx.strokeStyle = `rgba(${R * 0.3 | 0},${G * 0.35 | 0},${B * 0.35 | 0},${(((clay ? 0.05 : 0.075) + f * 0.03) * 7) / layers})`;
       ctx.stroke();
     }
     // 기포 (슬라임만) — 눌린 자리에서 밀려난다
@@ -596,7 +625,65 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
     rim.addColorStop(1, `rgba(${R * 0.3 | 0},${G * 0.3 | 0},${B * 0.3 | 0},0.7)`);
     ctx.strokeStyle = rim;
     ctx.stroke();
+
+    // 색 덩어리 — 본체 옆에 놓인 작은 슬라임. 끌어다 붙이면 섞인다
+    const nowMs = performance.now();
+    for (const b of blobs) {
+      if (b.grab === null) { b.vx *= damp(6, dt); b.vy *= damp(6, dt); b.vx += tilt.x * 260 * dt; b.vy += tilt.y * 260 * dt; b.x = clamp(b.x + b.vx * dt, b.r, c.w - b.r); b.y = clamp(b.y + b.vy * dt, b.r, c.h - b.r); }
+      const age = clamp((nowMs - b.born) / 320, 0, 1);
+      const sc = 1 - (1 - age) * (1 - age);
+      const rx = b.r * sc * (b.grab !== null ? 1.07 : 1), ry = b.r * sc * (b.grab !== null ? 0.93 : 1);
+      if (rx < 1) continue;
+      const [r2, g2, b2] = hexToRgb255(b.hex);
+      for (let k = 8; k >= 1; k--) {
+        ctx.beginPath(); ctx.ellipse(b.x + rx * 0.03, b.y + ry * 0.07, rx * (1 + k * 0.012), ry * (1 + k * 0.012), 0, 0, TAU);
+        ctx.fillStyle = "rgba(0, 10, 14, 0.05)"; ctx.fill();
+      }
+      const bg2 = ctx.createRadialGradient(b.x - rx * 0.2, b.y - ry * 0.25, rx * 0.05, b.x, b.y, rx);
+      bg2.addColorStop(0, `rgba(${Math.min(255, r2 + 40)},${Math.min(255, g2 + 40)},${Math.min(255, b2 + 40)},0.98)`);
+      bg2.addColorStop(0.6, `rgba(${r2},${g2},${b2},0.94)`);
+      bg2.addColorStop(1, `rgba(${(r2 * 0.5) | 0},${(g2 * 0.56) | 0},${(b2 * 0.56) | 0},0.75)`);
+      ctx.beginPath(); ctx.ellipse(b.x, b.y, rx, ry, 0, 0, TAU);
+      ctx.fillStyle = bg2; ctx.fill();
+      const hl2 = ctx.createRadialGradient(b.x - rx * 0.35, b.y - ry * 0.4, 0, b.x - rx * 0.3, b.y - ry * 0.35, rx * 0.5);
+      hl2.addColorStop(0, "rgba(255,255,255,0.5)"); hl2.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = hl2; ctx.fill();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = "rgba(255,255,255,0.4)"; ctx.stroke();
+    }
   });
+
+  /** 덩어리를 본체에 붙인다 — 그 자리 속살에 색이 번지고, 살이 늘어 둘레가 부푼다 */
+  const mergeBlob = (b: Blob) => {
+    bbox();
+    const u = (b.x - minX) / bw, v = (b.y - minY) / bh;
+    const ru = (b.r / bw) * TINT * 1.2, rv = (b.r / bh) * TINT * 1.2;
+    const [r2, g2, b2] = hexToRgb255(b.hex);
+    const g = tctx.createRadialGradient(0, 0, 0, 0, 0, ru);
+    g.addColorStop(0, `rgba(${r2},${g2},${b2},1)`); g.addColorStop(0.55, `rgba(${r2},${g2},${b2},0.95)`); g.addColorStop(1, `rgba(${r2},${g2},${b2},0)`);
+    tctx.save(); tctx.translate(u * TINT, v * TINT); tctx.scale(1, rv / ru);
+    tctx.fillStyle = g; tctx.fillRect(-ru, -ru, ru * 2, ru * 2); tctx.restore();
+    restArea += Math.PI * b.r * b.r * 0.7;
+    restPerimeter = TAU * Math.sqrt(restArea / Math.PI);
+    for (const n of nodes) {
+      const dx = n.x - b.x, dy = n.y - b.y; const d = Math.hypot(dx, dy) || 1;
+      const w = Math.exp(-((d / (b.r * 2.5)) ** 2));
+      n.vx += (dx / d) * 240 * w; n.vy += (dy / d) * 240 * w;
+    }
+  };
+  /** 문지르기 — 손가락 아래 속살 색을 움직인 방향으로 끌어 섞는다 */
+  const smear = (x: number, y: number, dx: number, dy: number) => {
+    const u = (x - minX) / bw, v = (y - minY) / bh;
+    const ru = ((FINGER_R * 1.5) / bw) * TINT, rv = ((FINGER_R * 1.5) / bh) * TINT;
+    tctx.save(); tctx.beginPath(); tctx.ellipse(u * TINT, v * TINT, ru, rv, 0, 0, TAU); tctx.clip();
+    tctx.globalAlpha = 0.55; tctx.drawImage(tint, (dx / bw) * TINT * 0.8, (dy / bh) * TINT * 0.8);
+    tctx.restore(); tctx.globalAlpha = 1;
+  };
+  /** 덩어리가 본체에 닿았는가 */
+  const touchesBody = (b: Blob) => {
+    if (inside(b.x, b.y)) return true;
+    for (const n of nodes) if (Math.hypot(n.x - b.x, n.y - b.y) < b.r * 0.9) return true;
+    return false;
+  };
 
   const setFinger = (id: number, x: number, y: number, dx: number, dy: number, pressed: boolean, dt = 1 / 60) => {
     const f = fingers.get(id);
@@ -619,6 +706,10 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
     dispose: () => loop.stop(),
     pointerDown(x, y, id) {
       bbox();
+      for (let i = blobs.length - 1; i >= 0; i--) {
+        const b = blobs[i];
+        if (Math.hypot(x - b.x, y - b.y) < b.r * 1.15) { b.grab = id; grabbed.set(id, b); return; }
+      }
       const f = fingers.get(id);
       if (f) {
         f.dent = { x, y, depth: 0, held: true, through: 0 };
@@ -629,11 +720,18 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
       if (wax && mix < 0.85 && inside(x, y)) startCrack(x, y);
     },
     pointerMove(x, y, dx, dy, id, pressed) {
+      const gb = grabbed.get(id);
+      if (gb) {
+        if (!pressed) { gb.grab = null; grabbed.delete(id); return; }
+        gb.x = x; gb.y = y; gb.vx = dx * 60; gb.vy = dy * 60;
+        return;
+      }
       const sp = Math.hypot(dx, dy);
       const k = sp > 18 ? 18 / sp : 1;
       const f = setFinger(id, x, y, dx * k, dy * k, pressed);
-      if (!wax || !pressed || sp < 0.5) return;
+      if (!pressed || sp < 0.5) return;
       bbox();
+      if (!wax) { if (!clay && inside(x, y)) smear(x, y, dx, dy); return; }
       if (!inside(x, y)) return;
       if (cracks.length === 0 && mix === 0) {
         // 아직 한 번도 부수지 않았으면 끌어도 균열부터 — 굳은 껍질은 문질러서는 안 부서진다
@@ -649,6 +747,12 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
       }
     },
     pointerUp(id) {
+      const gb = grabbed.get(id);
+      if (gb) {
+        gb.grab = null; grabbed.delete(id);
+        if (touchesBody(gb)) { mergeBlob(gb); blobs.splice(blobs.indexOf(gb), 1); }
+        return;
+      }
       const f = fingers.get(id);
       if (f) { f.pressed = false; f.vx = 0; f.vy = 0; f.dent.held = false; }
       if (id !== 0) fingers.delete(id);
@@ -671,7 +775,17 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
       spawn();
     },
     setColor(h) {
-      hex = h;
+      // 점토·왁뿌는 몸 색이 바뀌고, 슬라임은 그 색 덩어리가 옆에 생긴다 — 끌어다 붙여 섞는다
+      if (clay || wax) { hex = h; resetTint(); return; }
+      const { x: cx, y: cy } = center();
+      const r = radius * 0.26;
+      const portrait = c.h > c.w;
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const a = (portrait ? (side * Math.PI) / 2 : side < 0 ? Math.PI : 0) + rand(-0.5, 0.5);
+      const d = radius + r * 1.5;
+      const x = clamp(cx + Math.cos(a) * d, r + 8, c.w - r - 8), y = clamp(cy + Math.sin(a) * d, r + 8, c.h - r - 8);
+      blobs.push({ x, y, r, hex: h, vx: 0, vy: 0, grab: null, born: performance.now() });
+      if (blobs.length > 5) blobs.shift();
     },
     setSound(on) {
       sound = on;

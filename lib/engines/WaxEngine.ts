@@ -160,6 +160,12 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
     if (u < 0 || v < 0 || u >= 1 || v >= 1) return 0;
     return cctx.getImageData(Math.floor(u * TEX), Math.floor(v * TEX), 1, 1).data[3] / 255;
   };
+  /** 그 자리에 껍질이 남아 있는가 — 없으면 더는 갈라질 것이 없다 */
+  const waxAt = (u: number, v: number) => {
+    if (u < 0 || v < 0 || u >= 1 || v >= 1) return 0;
+    return wctx.getImageData(Math.floor(u * TEX), Math.floor(v * TEX), 1, 1).data[3] / 255;
+  };
+  const shellAt = (x: number, y: number) => { const [u, v] = toUV(x, y); return waxAt(u, v); };
   const onBody = (x: number, y: number) => { if (!insideLoop(outer, x, y)) return false; const [u, v] = toUV(x, y); return clayAt(u, v) > 0.15; };
 
   const resample = (loop: Node[]) => {
@@ -215,10 +221,12 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
       const wob = 1 + Math.sin(Math.atan2(cy - v, cx - u) * 3 + u * 40) * 0.12;
       if (dist > edge * wob) continue;
       if (clayAt(cx, cy) < 0.15) continue; // 구멍 위에는 껍질이 없다
+      if (waxAt(cx, cy) < 0.25) continue; // 이미 부서진 자리는 조각이 될 껍질이 없다
       const d = dist / rad;
       const state: Cell["state"] = d < 0.5 ? "off" : d < 0.78 ? (Math.random() < 0.6 ? "off" : "cracked") : "cracked";
       cells.push({ poly, cx, cy, ang: Math.atan2(cy - v, cx - u), d, state });
     }
+    if (cells.length === 0) return;
     const sh: Shatter = { u, v, cells, grow: 0, stage: 0 };
     shatters.push(sh);
     for (const old of shatters) {
@@ -322,7 +330,7 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
       wctx.beginPath(); wctx.ellipse((u + rand(-ru, ru) * 0.6) * TEX, (v + rand(-rv, rv) * 0.6) * TEX, ru * TEX * rand(0.35, 0.7), rv * TEX * rand(0.35, 0.7), 0, 0, TAU); wctx.fill();
     }
     wctx.restore();
-    if (sound && Math.random() < 0.05) crackle(0.2);
+    if (sound && Math.random() < 0.05 && waxAt(u, v) > 0.2) crackle(0.2);
   };
 
   const loop = createLoop((dt) => {
@@ -490,7 +498,7 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
       const f = fingers.get(id);
       if (f) { f.dent = { x, y, depth: 0, held: true, through: 0, punched: 0 }; dents.push(f.dent); f.pressed = true; f.x = x; f.y = y; f.vx = 0; f.vy = 0; f.at = performance.now(); f.lastCrackX = x; f.lastCrackY = y; }
       else setFinger(id, x, y, 0, 0, true);
-      if (onBody(x, y)) shatter(x, y, shatters.length === 0);
+      if (onBody(x, y) && shellAt(x, y) > 0.3) shatter(x, y, shatters.length === 0);
     },
     pointerMove(x, y, dx, dy, id, pressed) {
       const sp = Math.hypot(dx, dy);
@@ -501,9 +509,11 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
       if (!insideLoop(outer, x, y)) return;
       if (shatters.length === 0) return; // 굳은 껍질은 문질러서는 안 부서진다 — 먼저 꾹
       kneadAt(x, y, dx, dy);
-      if (Math.hypot(x - f.lastCrackX, y - f.lastCrackY) > 70 && onBody(x, y)) {
+      if (Math.hypot(x - f.lastCrackX, y - f.lastCrackY) > 70 && onBody(x, y) && shellAt(x, y) > 0.3) {
         f.lastCrackX = x; f.lastCrackY = y;
+        const before = shatters.length;
         shatter(x, y);
+        if (shatters.length === before) return;
         const sh = shatters[shatters.length - 1]; sh.grow = 0.7; sh.stage = 2; drawCrackLines(sh);
         for (const cell of sh.cells) if (cell.state === "off" && cell.d < 0.5) detach(cell);
       }
