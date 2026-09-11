@@ -183,10 +183,9 @@ export const SCENES: Scene[] = [
     thumb: `${glow(50, 55, "rgba(127,216,176,0.95)", 32)},linear-gradient(170deg, #04161b, #0b262e)`,
   },
   {
-    slug: "wax", title: "왁뿌", subtitle: "왁스 껍질을 꾹 눌러 부수고, 문지르면 속 점토와 섞여 사라져요.",
-    emoji: "🥚", category: "things", engine: "slime", color: { kind: "single", defaultColor: "#f08ca4", presets: SINGLE_PRESETS }, idleDrift: false, tilt: true, sound: true,
-    params: { wax: true, clay: true },
-    thumb: `${glow(50, 50, "rgba(239,233,220,0.95)", 34)},${glow(50, 50, "rgba(240,140,164,0.6)", 40)},linear-gradient(170deg, #04161b, #0b262e)`,
+    slug: "wax", title: "왁뿌", subtitle: "파스텔 왁스를 입힌 도넛. 꾹 누르면 껍질이 조각조각 갈라지고, 문지르면 속 점토와 섞여요.",
+    emoji: "🍩", category: "things", engine: "wax", color: { kind: "palette", colors: ["#f6b7cf", "#b9d7f2", "#f7ecb0"] }, idleDrift: false, tilt: true, sound: true,
+    thumb: `${glow(50, 50, "rgba(246,183,207,0.9)", 34)},${glow(70, 40, "rgba(185,215,242,0.8)", 30)},linear-gradient(170deg, #04161b, #0b262e)`,
   },
   {
     slug: "cloth", title: "천 커튼", subtitle: "바람에 흔들리는 얇은 천. 손으로 젖히면 되돌아와요.",

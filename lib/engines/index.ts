@@ -21,6 +21,7 @@ export type EngineKey =
   | "cloth"
   | "zen"
   | "chimes"
+  | "wax"
   | "breath";
 
 /**
@@ -45,6 +46,7 @@ export const ENGINES: Partial<Record<EngineKey, () => Promise<EngineFactory>>> =
   slime: () => import("./SlimeEngine").then((m) => m.createSlimeEngine),
   cloth: () => import("./ClothEngine").then((m) => m.createClothEngine),
   chimes: () => import("./ChimesEngine").then((m) => m.createChimesEngine),
+  wax: () => import("./WaxEngine").then((m) => m.createWaxEngine),
 };
 
 export const isEngineReady = (key: EngineKey): boolean => key in ENGINES;

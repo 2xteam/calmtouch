@@ -52,13 +52,14 @@ async function gesture(page, slug) {
     return;
   }
   if (slug === "wax") {
-    // 세 군데를 꾹 눌러 껍질이 갈라진 모습
-    for (const [x, y] of [[W * 0.5, H * 0.5], [W * 0.38, H * 0.38], [W * 0.62, H * 0.6]]) {
-      await m.move(x, y); await m.down(); await page.waitForTimeout(650); await m.up(); await page.waitForTimeout(150);
+    // 도넛 고리(가운데는 구멍) 세 군데를 꾹 눌러 껍질이 조각조각 갈라진 모습
+    const S = Math.min(W, H) * 0.37 * 0.67;
+    for (const a of [-2.2, -0.6, 1.1]) {
+      await m.move(W / 2 + Math.cos(a) * S, H / 2 + Math.sin(a) * S); await m.down(); await page.waitForTimeout(700); await m.up(); await page.waitForTimeout(150);
     }
-    // 조금 문질러 섞이는 중간 모습
-    await m.move(W * 0.4, H * 0.5); await m.down();
-    for (let i = 0; i < 14; i++) await m.move(W * 0.4 + i * 10, H * 0.5 + Math.sin(i / 2) * 20, { steps: 2 });
+    // 한 군데는 조금 문질러 섞이기 시작한 모습
+    await m.move(W / 2 + Math.cos(2.6) * S, H / 2 + Math.sin(2.6) * S); await m.down();
+    for (let i = 0; i < 10; i++) await m.move(W / 2 + Math.cos(2.6 + i * 0.05) * S, H / 2 + Math.sin(2.6 + i * 0.05) * S + Math.sin(i) * 8, { steps: 2 });
     await m.up();
     return;
   }
