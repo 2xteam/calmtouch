@@ -20,7 +20,8 @@ import type { EngineFactory } from "./types";
  */
 type Node = { x: number; y: number; vx: number; vy: number };
 type Finger = { x: number; y: number; vx: number; vy: number; pressed: boolean; at: number; dent: Dent; lastCrackX: number; lastCrackY: number };
-type Dent = { x: number; y: number; depth: number; held: boolean };
+/** through: 바닥까지 눌려 뚫린 정도 0~1 — 손을 떼면 슬라임이 흘러 메운다 */
+type Dent = { x: number; y: number; depth: number; held: boolean; through: number };
 type Crack = { u: number; v: number; rays: { len: number; pts: [number, number][] }[]; grow: number; chipped: number };
 type Chip = { pts: [number, number][]; x: number; y: number; vx: number; vy: number; rot: number; vr: number; life: number };
 
@@ -287,8 +288,14 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
     // 자국 — 슬라임은 놓으면 1.5초에 메워지고, 점토는 그대로 남는다(아주 천천히만 무뎌진다)
     for (let i = dents.length - 1; i >= 0; i--) {
       const d = dents[i];
-      if (d.held) d.depth = Math.min(1, d.depth + dt / 0.35);
-      else if (!clay) { d.depth -= dt / 2.5; if (d.depth <= 0) { dents.splice(i, 1); continue; } }
+      if (d.held) {
+        d.depth = Math.min(1, d.depth + dt / 0.35);
+        // 다 잠긴 뒤에도 누르고 있으면 바닥에 닿아 구멍이 난다
+        if (d.depth >= 1) d.through = Math.min(1, d.through + dt / 0.55);
+      } else if (!clay) {
+        d.depth -= dt / 2.5; d.through = Math.max(0, d.through - dt / 1.6);
+        if (d.depth <= 0 && d.through <= 0) { dents.splice(i, 1); continue; }
+      }
     }
     if (clay && dents.length > 40) dents.splice(0, dents.length - 40);
 
@@ -547,6 +554,26 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
       ctx.fillStyle = ring;
       ctx.fillRect(d.x - rr * 2, d.y - rr * 2, rr * 4, rr * 4);
     }
+    // 바닥까지 뚫린 구멍 — 바닥이 보이고, 둘레는 슬라임 벽(위쪽 벽은 그늘 · 아래쪽 벽은 빛을 받는다)
+    for (const d of dents) {
+      if (d.through <= 0) continue;
+      const e = d.through * d.through * (3 - 2 * d.through);
+      const hr = FINGER_R * 0.78 * e;
+      // 벽·입술은 먼저 (방사 그라데이션은 안쪽 원을 첫 색으로 채우므로 바닥이 덮이지 않게 바닥을 나중에 그린다)
+      const wall = ctx.createRadialGradient(d.x, d.y, hr, d.x, d.y, hr * 1.45);
+      wall.addColorStop(0, `rgba(0, 12, 16, ${0.32 * e})`); wall.addColorStop(1, "rgba(0,12,16,0)");
+      ctx.fillStyle = wall; ctx.fillRect(d.x - hr * 2, d.y - hr * 2, hr * 4, hr * 4);
+      const lip = ctx.createRadialGradient(d.x + hr * 0.2, d.y + hr * 0.2, hr * 0.98, d.x + hr * 0.2, d.y + hr * 0.2, hr * 1.22);
+      lip.addColorStop(0, `rgba(255,255,255,${(clay ? 0.2 : 0.45) * e})`); lip.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = lip; ctx.fillRect(d.x - hr * 2, d.y - hr * 2, hr * 4, hr * 4);
+      ctx.save();
+      ctx.beginPath(); ctx.arc(d.x, d.y, hr, 0, TAU); ctx.clip();
+      ctx.fillStyle = bg; ctx.fillRect(d.x - hr, d.y - hr, hr * 2, hr * 2);
+      const floor = ctx.createRadialGradient(d.x - hr * 0.25, d.y - hr * 0.25, hr * 0.3, d.x, d.y, hr);
+      floor.addColorStop(0, "rgba(0,0,0,0)"); floor.addColorStop(1, "rgba(0,4,6,0.55)");
+      ctx.fillStyle = floor; ctx.fillRect(d.x - hr, d.y - hr, hr * 2, hr * 2);
+      ctx.restore();
+    }
     ctx.restore();
 
     for (const ch of chips) {
@@ -579,7 +606,7 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
       if (pressed) { f.dent.x = x; f.dent.y = y; }
       return f;
     }
-    const dent: Dent = { x, y, depth: 0, held: pressed };
+    const dent: Dent = { x, y, depth: 0, held: pressed, through: 0 };
     if (pressed) dents.push(dent);
     const nf: Finger = { x, y, vx, vy, pressed, at: performance.now(), dent, lastCrackX: x, lastCrackY: y };
     fingers.set(id, nf);
@@ -594,7 +621,7 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
       bbox();
       const f = fingers.get(id);
       if (f) {
-        f.dent = { x, y, depth: 0, held: true };
+        f.dent = { x, y, depth: 0, held: true, through: 0 };
         dents.push(f.dent);
         f.pressed = true; f.x = x; f.y = y; f.vx = 0; f.vy = 0; f.at = performance.now();
         f.lastCrackX = x; f.lastCrackY = y;

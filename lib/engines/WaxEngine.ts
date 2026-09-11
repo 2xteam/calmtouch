@@ -1,22 +1,22 @@
 import { createCanvas2D, createLoop, DEEP_BG } from "@/lib/canvas/tools";
 import { crackle } from "@/lib/audio/tones";
-import { clamp, damp, lerp, rand, TAU } from "@/lib/util/math";
+import { clamp, lerp, rand, TAU } from "@/lib/util/math";
 import type { EngineFactory } from "./types";
 
 /**
  * 왁뿌 — 파스텔 왁스를 입힌 도넛 모양 점토 (참고: 팔레트슬라임 "왕도넛 왁뿌", 2026-09-11 사용자 사진).
  *
- *   · 도넛: 바깥 고리 96점 + 구멍 고리 48점. 속살은 **점토** — 손이 닿아 있을 때만 움직이고 떼면 굳는다
- *   · 껍질: 분홍·하늘·노랑 세 구역이 부드럽게 이어지는 광택 왁스. 별 스프링클이 박혀 있다
- *   · 꾹 누르면 그 자리 껍질이 **조각조각 갈라진다** — 손가락 가까운 조각은 떨어져 조금 밀리고 뒤집힌 채 얹히고,
- *     바깥 조각은 금만 가서 다음에 누르면 떨어진다. 떨어진 자리에는 보슬한 속살(무광 · 알갱이 결)이 드러난다
- *   · 문지르면 조각이 갈려 속살에 섞인다. 섞임이 다 되면 껍질은 없다. "지우기" 는 다시 입히기
- *
- * 껍질과 조각은 도넛 경계 상자 (u,v) 캔버스 두 장(wax · flakes)이라 도넛이 눌리면 함께 늘어난다.
+ *   · 몸은 바깥 고리 96점의 점토 — 손 근처만, 손이 닿아 있을 때만 움직이고 떼면 굳는다
+ *   · 속살 색은 도넛 경계 상자 (u,v) 의 **clay 캔버스**다. 가운데 구멍도 그 캔버스의 빈자리일 뿐이라
+ *     문지르면 색이 서로 끌려 섞이고 구멍도 메워진다 (2026-09-11 정정: 구멍·색을 억지로 지키지 않는다)
+ *   · 껍질(wax 캔버스): 분홍·하늘·노랑 세 구역 + 별 스프링클. 꾹 누르면 **조각조각** 갈라져 가운데 조각은
+ *     떨어져 그 자리에 얹히고(flakes 캔버스) 바깥은 실금만. 문지르면 조각이 갈려 속살에 섞이고 껍질은 사라진다
+ *   · 다 잠긴 뒤에도 누르고 있으면 **바닥까지 닿아 구멍이 뚫린다** — 껍질·조각·속살이 함께 뚫려 바닥이 보인다.
+ *     문지르면 주변 점토가 끌려와 메워진다
  */
 type Node = { x: number; y: number; vx: number; vy: number };
+type Dent = { x: number; y: number; depth: number; held: boolean; through: number; punched: number };
 type Finger = { x: number; y: number; vx: number; vy: number; pressed: boolean; at: number; dent: Dent; lastCrackX: number; lastCrackY: number };
-type Dent = { x: number; y: number; depth: number; held: boolean };
 type Cell = { poly: [number, number][]; cx: number; cy: number; ang: number; d: number; state: "cracked" | "off" };
 type Shatter = { u: number; v: number; cells: Cell[]; grow: number; stage: number };
 
@@ -30,22 +30,19 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
   const { ctx } = c;
   let sound = ctx0.sound;
 
-  const N = 96, M = 48;
+  const N = 96;
   let outer: Node[] = [];
-  let inner: Node[] = [];
   let R = 100, hole = 34;
   let restArea = 0;
-  let tilt = { x: 0, y: 0 };
   const dents: Dent[] = [];
   const shatters: Shatter[] = [];
-  let mix = 0;
-  let knead = 0;
 
-  const wax = document.createElement("canvas"); wax.width = TEX; wax.height = TEX;
-  const wctx = wax.getContext("2d")!;
-  const flakes = document.createElement("canvas"); flakes.width = TEX; flakes.height = TEX;
-  const fctx = flakes.getContext("2d")!;
-  const grain = document.createElement("canvas"); grain.width = 256; grain.height = 256;
+  const mk = (w: number, h: number) => { const cv = document.createElement("canvas"); cv.width = w; cv.height = h; return cv; };
+  const clay = mk(TEX, TEX); const cctx = clay.getContext("2d")!;
+  const wax = mk(TEX, TEX); const wctx = wax.getContext("2d")!;
+  const flakes = mk(TEX, TEX); const fctx = flakes.getContext("2d")!;
+  const body = mk(1, 1); const bctx = body.getContext("2d")!; // 화면 크기 — 속살·조각·껍질을 한 번 합친다
+  const grain = mk(256, 256);
   {
     const g = grain.getContext("2d")!;
     for (let i = 0; i < 9000; i++) {
@@ -54,42 +51,25 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
     }
   }
 
-  /** (u,v) → 도넛 중심 기준 각도 → 파스텔 색 (세 구역 사이는 부드럽게) */
+  let minX = 0, maxX = 1, minY = 0, maxY = 1, bw = 1, bh = 1;
+
+  /** (u,v) → 도넛 중심 기준 각도 → 파스텔 색 (세 구역 사이는 부드럽게). 처음 칠할 때만 쓴다 */
   const sectionColor = (u: number, v: number, pale = 0): [number, number, number] => {
-    const a = Math.atan2(v - 0.5, u - 0.5) / TAU + 0.5; // 0~1
+    const a = Math.atan2(v - 0.5, u - 0.5) / TAU + 0.5;
     const p = (a * 3 + 0.15) % 3;
     const i = Math.floor(p), f = p - i;
-    const blend = clamp((f - 0.7) / 0.3, 0, 1); // 구역의 마지막 30% 에서 다음 색으로
+    const blend = clamp((f - 0.7) / 0.3, 0, 1);
     const A = SECTIONS[i % 3], B = SECTIONS[(i + 1) % 3];
     return [0, 1, 2].map((k) => Math.round(lerp(lerp(A[k], B[k], blend), 255, pale))) as [number, number, number];
   };
-
-  const recoat = () => {
-    wctx.globalCompositeOperation = "source-over";
-    wctx.clearRect(0, 0, TEX, TEX);
-    // 광택 왁스 — 부채꼴로 세 색을 칠한다
+  const paintSections = (g: CanvasRenderingContext2D, pale: number, mul: [number, number, number]) => {
     const seg = 96;
     for (let i = 0; i < seg; i++) {
       const a0 = (i / seg) * TAU, a1 = ((i + 1.02) / seg) * TAU;
-      const [r, g, b] = sectionColor(0.5 + Math.cos((a0 + a1) / 2) * 0.3, 0.5 + Math.sin((a0 + a1) / 2) * 0.3, 0.12);
-      wctx.fillStyle = `rgb(${r},${g},${b})`;
-      wctx.beginPath(); wctx.moveTo(TEX / 2, TEX / 2); wctx.arc(TEX / 2, TEX / 2, TEX, a0, a1); wctx.closePath(); wctx.fill();
+      const [r, gg, b] = sectionColor(0.5 + Math.cos((a0 + a1) / 2) * 0.3, 0.5 + Math.sin((a0 + a1) / 2) * 0.3, pale);
+      g.fillStyle = `rgb(${(r * mul[0]) | 0},${(gg * mul[1]) | 0},${(b * mul[2]) | 0})`;
+      g.beginPath(); g.moveTo(TEX / 2, TEX / 2); g.arc(TEX / 2, TEX / 2, TEX, a0, a1); g.closePath(); g.fill();
     }
-    // 왁스 두께의 옅은 결
-    for (let i = 0; i < 1400; i++) {
-      wctx.fillStyle = `rgba(255,255,255,${rand(0.05, 0.16)})`;
-      wctx.fillRect(Math.random() * TEX, Math.random() * TEX, rand(1, 3), rand(1, 3));
-    }
-    // 별 스프링클 — 고리 위에만
-    for (let i = 0; i < 46; i++) {
-      const a = rand(0, TAU), rr = rand(0.21, 0.46);
-      const x = (0.5 + Math.cos(a) * rr) * TEX, y = (0.5 + Math.sin(a) * rr) * TEX;
-      star(wctx, x, y, rand(7, 11), rand(0, TAU), SPRINKLES[Math.floor(Math.random() * SPRINKLES.length)]);
-    }
-    fctx.globalCompositeOperation = "source-over";
-    fctx.clearRect(0, 0, TEX, TEX);
-    shatters.length = 0;
-    mix = 0; knead = 0;
   };
   function star(g: CanvasRenderingContext2D, x: number, y: number, r: number, rot: number, color: string) {
     g.save(); g.translate(x, y); g.rotate(rot);
@@ -101,16 +81,54 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
     g.restore();
   }
 
+  /** 속살·조각·껍질을 함께 뚫는다. rim 이면 구멍 둘레 속살에 어두운 벽을 그린다 */
+  const punch = (u: number, v: number, ru: number, rim: boolean) => {
+    const rv = ru * (bw / bh);
+    for (const g of [cctx, wctx, fctx]) {
+      g.globalCompositeOperation = "destination-out"; g.fillStyle = "rgb(0,0,0)";
+      g.beginPath(); g.ellipse(u * TEX, v * TEX, ru * TEX, rv * TEX, 0, 0, TAU); g.fill();
+      g.globalCompositeOperation = "source-over";
+    }
+    if (rim) {
+      cctx.globalCompositeOperation = "source-atop";
+      const gr = cctx.createRadialGradient(u * TEX, v * TEX, ru * TEX, u * TEX, v * TEX, ru * TEX * 1.6);
+      gr.addColorStop(0, "rgba(70,35,70,0.5)"); gr.addColorStop(1, "rgba(70,35,70,0)");
+      cctx.fillStyle = gr; cctx.fillRect((u - ru * 2) * TEX, (v - rv * 2) * TEX, ru * 4 * TEX, rv * 4 * TEX);
+      cctx.globalCompositeOperation = "source-over";
+    }
+  };
+
+  const recoat = () => {
+    cctx.globalCompositeOperation = "source-over"; cctx.clearRect(0, 0, TEX, TEX);
+    paintSections(cctx, 0, [0.9, 0.84, 0.86]);
+    wctx.globalCompositeOperation = "source-over"; wctx.clearRect(0, 0, TEX, TEX);
+    paintSections(wctx, 0.12, [1, 1, 1]);
+    for (let i = 0; i < 1400; i++) {
+      wctx.fillStyle = `rgba(255,255,255,${rand(0.05, 0.16)})`;
+      wctx.fillRect(Math.random() * TEX, Math.random() * TEX, rand(1, 3), rand(1, 3));
+    }
+    for (let i = 0; i < 46; i++) {
+      const a = rand(0, TAU), rr = rand(0.21, 0.46);
+      star(wctx, (0.5 + Math.cos(a) * rr) * TEX, (0.5 + Math.sin(a) * rr) * TEX, rand(7, 11), rand(0, TAU), SPRINKLES[Math.floor(Math.random() * SPRINKLES.length)]);
+    }
+    fctx.globalCompositeOperation = "source-over"; fctx.clearRect(0, 0, TEX, TEX);
+    shatters.length = 0;
+    // 가운데 구멍 — 처음엔 뚫려 있지만 문지르면 메워질 수 있다
+    bw = bh = 2 * R;
+    punch(0.5, 0.5, hole / (2 * R), true);
+  };
+
   const center = () => ({ x: c.w / 2, y: c.h / 2 });
   const spawn = () => {
     R = Math.min(c.w, c.h) * 0.37;
     hole = R * 0.34;
     const { x: cx, y: cy } = center();
-    outer = []; inner = [];
+    outer = [];
     for (let i = 0; i < N; i++) { const a = (i / N) * TAU; outer.push({ x: cx + Math.cos(a) * R, y: cy + Math.sin(a) * R, vx: 0, vy: 0 }); }
-    for (let i = 0; i < M; i++) { const a = (i / M) * TAU; inner.push({ x: cx + Math.cos(a) * hole, y: cy + Math.sin(a) * hole, vx: 0, vy: 0 }); }
-    restArea = area(outer) - area(inner);
+    restArea = area(outer);
     dents.length = 0;
+    body.width = Math.max(1, Math.floor(c.w * c.dpr)); body.height = Math.max(1, Math.floor(c.h * c.dpr));
+    bctx.setTransform(c.dpr, 0, 0, c.dpr, 0, 0);
     recoat();
   };
   const area = (loop: Node[]) => {
@@ -118,17 +136,16 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
     for (let i = 0; i < loop.length; i++) { const a = loop[i], b = loop[(i + 1) % loop.length]; s += a.x * b.y - b.x * a.y; }
     return Math.abs(s) / 2;
   };
-  spawn();
 
   const fingers = new Map<number, Finger>();
   const FINGER_R = 30;
 
-  let minX = 0, maxX = 1, minY = 0, maxY = 1, bw = 1, bh = 1;
   const bbox = () => {
     minX = 1e9; maxX = -1e9; minY = 1e9; maxY = -1e9;
     for (const n of outer) { if (n.x < minX) minX = n.x; if (n.x > maxX) maxX = n.x; if (n.y < minY) minY = n.y; if (n.y > maxY) maxY = n.y; }
     bw = Math.max(1, maxX - minX); bh = Math.max(1, maxY - minY);
   };
+  spawn();
   const toUV = (x: number, y: number) => [(x - minX) / bw, (y - minY) / bh] as const;
   const insideLoop = (loop: Node[], x: number, y: number) => {
     let ins = false;
@@ -138,7 +155,12 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
     }
     return ins;
   };
-  const onDonut = (x: number, y: number) => insideLoop(outer, x, y) && !insideLoop(inner, x, y);
+  /** 그 자리에 속살이 있는가 (구멍이 아닌가) */
+  const clayAt = (u: number, v: number) => {
+    if (u < 0 || v < 0 || u >= 1 || v >= 1) return 0;
+    return cctx.getImageData(Math.floor(u * TEX), Math.floor(v * TEX), 1, 1).data[3] / 255;
+  };
+  const onBody = (x: number, y: number) => { if (!insideLoop(outer, x, y)) return false; const [u, v] = toUV(x, y); return clayAt(u, v) > 0.15; };
 
   const resample = (loop: Node[]) => {
     const n = loop.length;
@@ -162,7 +184,7 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
    */
   const shatter = (x: number, y: number, big = false) => {
     const [u, v] = toUV(x, y);
-    const asp = bw / bh; // v 는 화면에서 세로라 같은 길이가 되게 늘린다
+    const asp = bw / bh;
     const rad = big ? 0.2 : 0.13;
     const sp = 0.046;
     const rows = Math.ceil(rad / (sp * 0.866)) + 1;
@@ -182,7 +204,6 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
       const odd = j & 1;
       const A = odd ? [vert(i, j), vert(i + 1, j), vert(i + 1, j + 1)] : [vert(i, j), vert(i + 1, j), vert(i, j + 1)];
       const B = odd ? [vert(i, j), vert(i + 1, j + 1), vert(i, j + 1)] : [vert(i + 1, j), vert(i + 1, j + 1), vert(i, j + 1)];
-      // 절반은 둘을 합쳐 사각 조각으로
       if (Math.random() < 0.5) { const q = odd ? [A[0], A[1], A[2], B[2]] : [A[0], A[1], B[1], B[2]]; tris.push(q); }
       else { tris.push(A); tris.push(B); }
     }
@@ -193,19 +214,20 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
       const dist = Math.hypot(cx - u, (cy - v) / asp);
       const wob = 1 + Math.sin(Math.atan2(cy - v, cx - u) * 3 + u * 40) * 0.12;
       if (dist > edge * wob) continue;
+      if (clayAt(cx, cy) < 0.15) continue; // 구멍 위에는 껍질이 없다
       const d = dist / rad;
       const state: Cell["state"] = d < 0.5 ? "off" : d < 0.78 ? (Math.random() < 0.6 ? "off" : "cracked") : "cracked";
       cells.push({ poly, cx, cy, ang: Math.atan2(cy - v, cx - u), d, state });
     }
     const sh: Shatter = { u, v, cells, grow: 0, stage: 0 };
     shatters.push(sh);
-    // 이 자리 근처에 금만 가 있던 옛 조각은 이제 떨어진다
     for (const old of shatters) {
       if (old === sh) continue;
       for (const cell of old.cells) {
         if (cell.state === "cracked" && Math.hypot(cell.cx - u, (cell.cy - v) / asp) < rad * 0.9) { cell.state = "off"; detach(cell); }
       }
     }
+    if (shatters.length > 30) shatters.shift();
     if (sound) crackle(0.6);
   };
   const drawCrackLines = (sh: Shatter) => {
@@ -218,12 +240,11 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
         const a = cell.poly[j], b = cell.poly[(j + 1) % n];
         const key = a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]) ? `${a}|${b}` : `${b}|${a}`;
         if (seen.has(key)) continue; seen.add(key);
-        // 바깥 실금은 군데군데 끊긴다
-        if (cell.d > 0.6 && Math.random() < 0.55) continue;
+        if (cell.d > 0.6 && Math.random() < 0.55) continue; // 바깥 실금은 군데군데 끊긴다
         const k = clamp(1.3 - cell.d, 0.35, 1);
         wctx.beginPath(); wctx.moveTo(a[0] * TEX, a[1] * TEX); wctx.lineTo(b[0] * TEX, b[1] * TEX);
         wctx.strokeStyle = `rgba(70, 50, 65, ${0.7 * k})`; wctx.lineWidth = 0.9 + k * 1.1; wctx.stroke();
-        if (cell.d > 0.6) continue; // 바깥 실금은 어두운 선만
+        if (cell.d > 0.6) continue;
         wctx.strokeStyle = `rgba(255,255,255,${0.45 * k})`; wctx.lineWidth = 0.7;
         wctx.beginPath(); wctx.moveTo(a[0] * TEX + 1.2, a[1] * TEX + 1.2); wctx.lineTo(b[0] * TEX + 1.2, b[1] * TEX + 1.2); wctx.stroke();
       }
@@ -232,14 +253,18 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
   };
   /** 조각을 껍질에서 떼어 flakes 캔버스에 얹는다 — 조금 밀리고, 돌아가고, 두께가 보이게 들리고, 몇은 뒤집힌다 */
   const detach = (cell: Cell) => {
+    // 조각 색은 그 자리 껍질 색
+    const px = Math.floor(clamp(cell.cx, 0, 0.999) * TEX), py = Math.floor(clamp(cell.cy, 0, 0.999) * TEX);
+    const wp = wctx.getImageData(px, py, 1, 1).data;
+    const cp = cctx.getImageData(px, py, 1, 1).data;
+    const [r, g, b] = wp[3] > 40 ? [wp[0], wp[1], wp[2]] : [lerp(cp[0], 255, 0.12), lerp(cp[1], 255, 0.12), lerp(cp[2], 255, 0.12)];
     wctx.globalCompositeOperation = "destination-out";
     wctx.fillStyle = "rgb(0,0,0)";
     wctx.beginPath();
-    cell.poly.forEach(([px, py], j) => (j === 0 ? wctx.moveTo(px * TEX, py * TEX) : wctx.lineTo(px * TEX, py * TEX)));
+    cell.poly.forEach(([qx, qy], j) => (j === 0 ? wctx.moveTo(qx * TEX, qy * TEX) : wctx.lineTo(qx * TEX, qy * TEX)));
     wctx.closePath(); wctx.fill();
     wctx.globalCompositeOperation = "source-over";
 
-    const [r, g, b] = sectionColor(cell.cx, cell.cy, 0.12);
     const flipped = Math.random() < 0.3;
     const shift = rand(0.004, 0.022) * (0.4 + cell.d);
     fctx.save();
@@ -248,66 +273,77 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
     const scale = rand(0.9, 1.05);
     const trace = (ox: number, oy: number) => {
       fctx.beginPath();
-      cell.poly.forEach(([px, py], j) => {
-        const X = (px - cell.cx) * TEX * scale + ox, Y = (py - cell.cy) * TEX * scale + oy;
+      cell.poly.forEach(([qx, qy], j) => {
+        const X = (qx - cell.cx) * TEX * scale + ox, Y = (qy - cell.cy) * TEX * scale + oy;
         if (j === 0) fctx.moveTo(X, Y); else fctx.lineTo(X, Y);
       });
       fctx.closePath();
     };
-    // 바닥 그림자
     trace(3, 5); fctx.fillStyle = "rgba(50,30,50,0.26)"; fctx.fill();
-    // 옆면 두께 — 아래로 밀린 어두운 층
     trace(1.5, 3); fctx.fillStyle = `rgb(${(r * 0.62) | 0},${(g * 0.6) | 0},${(b * 0.62) | 0})`; fctx.fill();
-    // 윗면
     trace(0, 0);
-    fctx.fillStyle = flipped ? `rgb(${(r * 0.82) | 0},${(g * 0.8) | 0},${(b * 0.82) | 0})` : `rgb(${r},${g},${b})`;
+    fctx.fillStyle = flipped ? `rgb(${(r * 0.82) | 0},${(g * 0.8) | 0},${(b * 0.82) | 0})` : `rgb(${r | 0},${g | 0},${b | 0})`;
     fctx.fill();
     fctx.strokeStyle = flipped ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.7)"; fctx.lineWidth = 1.2; fctx.stroke();
     if (!flipped) {
-      // 윗면 광택 한 점
       const gl = fctx.createRadialGradient(-2, -3, 0, -2, -3, 10);
       gl.addColorStop(0, "rgba(255,255,255,0.55)"); gl.addColorStop(1, "rgba(255,255,255,0)");
       fctx.fillStyle = gl; trace(0, 0); fctx.fill();
     }
     fctx.restore();
   };
-  /** 문지르기 — 조각을 갈아 속살에 섞는다 */
+
+  /**
+   * 문지르기 — 손가락 아래 속살을 움직인 방향으로 끌어 색이 섞이고 구멍이 메워진다.
+   * 껍질은 부서져 옅어지고, 조각과 껍질 색은 속살에 스며든다.
+   */
   const kneadAt = (x: number, y: number, dx: number, dy: number) => {
     const [u, v] = toUV(x, y);
-    knead += Math.hypot(dx, dy);
-    mix = clamp(knead / (R * 30), 0, 1);
-    const r = (FINGER_R * 1.2) / bw;
-    // 껍질도 손가락 아래에서 조금씩 부서진다
-    wctx.globalCompositeOperation = "destination-out";
-    wctx.fillStyle = "rgba(0,0,0,0.35)";
+    const ru = (FINGER_R * 1.25) / bw, rv = ru * (bw / bh);
+    const sx = (dx / bw) * TEX * 0.75, sy = (dy / bh) * TEX * 0.75;
+    const clipTo = (g: CanvasRenderingContext2D) => { g.beginPath(); g.ellipse(u * TEX, v * TEX, ru * TEX, rv * TEX, 0, 0, TAU); g.clip(); };
+    // 속살 끌기 + 껍질·조각 색 스며들기
+    cctx.save(); clipTo(cctx);
+    cctx.globalAlpha = 0.6; cctx.drawImage(clay, sx, sy);
+    cctx.globalAlpha = 0.5; cctx.drawImage(clay, 0, 0); // 끌려온 얇은 살을 다시 뭉쳐 불투명하게
+    cctx.globalAlpha = 0.14; cctx.drawImage(wax, sx * 0.5, sy * 0.5);
+    cctx.globalAlpha = 0.2; cctx.drawImage(flakes, sx * 0.5, sy * 0.5);
+    cctx.restore();
+    // 조각도 함께 끌리며 갈려 옅어진다
+    fctx.save(); clipTo(fctx);
+    fctx.globalAlpha = 0.5; fctx.drawImage(flakes, sx, sy);
+    fctx.globalCompositeOperation = "destination-out"; fctx.globalAlpha = 1; fctx.fillStyle = "rgba(0,0,0,0.16)";
+    fctx.fillRect(0, 0, TEX, TEX);
+    fctx.restore();
+    // 껍질은 끌리지 않고 부서진다
+    wctx.save(); clipTo(wctx);
+    wctx.globalCompositeOperation = "destination-out"; wctx.fillStyle = "rgba(0,0,0,0.3)";
     for (let i = 0; i < 3; i++) {
-      wctx.beginPath(); wctx.ellipse((u + rand(-r, r) * 0.6) * TEX, (v + rand(-r, r) * 0.6 * (bw / bh)) * TEX, r * TEX * rand(0.3, 0.6), r * TEX * rand(0.3, 0.6) * (bw / bh), 0, 0, TAU); wctx.fill();
+      wctx.beginPath(); wctx.ellipse((u + rand(-ru, ru) * 0.6) * TEX, (v + rand(-rv, rv) * 0.6) * TEX, ru * TEX * rand(0.35, 0.7), rv * TEX * rand(0.35, 0.7), 0, 0, TAU); wctx.fill();
     }
-    wctx.globalCompositeOperation = "source-over";
-    // 조각은 갈려 옅어지고, 갈린 가루가 결로 번진다
-    fctx.globalCompositeOperation = "destination-out";
-    fctx.fillStyle = "rgba(0,0,0,0.2)";
-    fctx.beginPath(); fctx.ellipse(u * TEX, v * TEX, r * TEX * 1.4, r * TEX * 1.4 * (bw / bh), 0, 0, TAU); fctx.fill();
-    fctx.globalCompositeOperation = "source-over";
-    const [pr, pg, pb] = sectionColor(u, v, 0.2);
-    fctx.fillStyle = `rgba(${pr},${pg},${pb},${0.22 * (1 - mix)})`;
-    fctx.save(); fctx.translate(u * TEX, v * TEX); fctx.rotate(Math.atan2(dy, dx));
-    fctx.beginPath(); fctx.ellipse(0, 0, r * TEX * 1.6, r * TEX * 0.5, 0, 0, TAU); fctx.fill(); fctx.restore();
+    wctx.restore();
     if (sound && Math.random() < 0.05) crackle(0.2);
   };
 
-  const loop = createLoop((dt, t) => {
+  const loop = createLoop((dt) => {
     if (c.resize()) spawn();
     const h = Math.min(dt, 1 / 45);
     const sub = 5, hs = h / sub;
-    tilt.x *= damp(1.2, dt); tilt.y *= damp(1.2, dt);
     const now = performance.now();
     for (const [id, f] of fingers) if (id === 0 && !f.pressed && now - f.at > 600) fingers.delete(id);
 
-    for (const d of dents) if (d.held) d.depth = Math.min(1, d.depth + dt / 0.35);
+    bbox();
+    // 자국 — 다 잠긴 뒤에도 누르고 있으면 바닥에 닿아 뚫린다 (점토라 뚫린 채 남는다)
+    for (const d of dents) {
+      if (!d.held) continue;
+      d.depth = Math.min(1, d.depth + dt / 0.35);
+      if (d.depth >= 1) d.through = Math.min(1, d.through + dt / 0.8);
+      const [u, v] = toUV(d.x, d.y);
+      if (d.through > 0.5 && d.punched < 1) { d.punched = 1; punch(u, v, (FINGER_R * 0.45) / bw, false); }
+      if (d.through >= 1 && d.punched < 2) { d.punched = 2; punch(u, v, (FINGER_R * 0.8) / bw, true); if (sound) crackle(0.8); }
+    }
     if (dents.length > 40) dents.splice(0, dents.length - 40);
 
-    bbox();
     // 금이 자국 깊이를 따라 자라고, 문턱을 넘으면 안쪽 조각이 떨어진다
     for (const f of fingers.values()) {
       if (!f.pressed) continue;
@@ -320,34 +356,30 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
       if (d > 0.95 && sh.stage < 3) { sh.stage = 3; for (const cell of sh.cells) if (cell.state === "off" && cell.d >= 0.5) detach(cell); if (sound) crackle(1); }
     }
 
-    // 점토 — 손이 닿아 있을 때만
+    // 점토 — 손이 닿아 있을 때, 손 근처만
     const touching = [...fingers.values()].some((f) => f.pressed);
-    if (!touching) { for (const n of outer) { n.vx = 0; n.vy = 0; } for (const n of inner) { n.vx = 0; n.vy = 0; } }
+    if (!touching) { for (const n of outer) { n.vx = 0; n.vy = 0; } }
     else {
       for (let s = 0; s < sub; s++) {
-        const A = area(outer) - area(inner);
+        const A = area(outer);
         const pressureK = clamp((restArea - A) / restArea, -0.6, 0.6) * 1200;
         const REACH = R * 0.42;
         const near = (p: Node) => { let m = 1e9; for (const f of fingers.values()) if (f.pressed) m = Math.min(m, Math.hypot(p.x - f.x, p.y - f.y)); return m; };
-        const step = (loop: Node[], sign: number) => {
-          const n = loop.length; const restLen = (sign > 0 ? TAU * R : TAU * hole) / n;
-          for (let i = 0; i < n; i++) {
-            const p = loop[i], l = loop[(i + n - 1) % n], r = loop[(i + 1) % n];
-            // 손에서 먼 점토는 굳어 있다 — 손 근처만 움직인다
-            if (near(p) > REACH) { p.vx = 0; p.vy = 0; continue; }
-            let ax = 0, ay = 0;
-            for (const o of [l, r]) { const dx = o.x - p.x, dy = o.y - p.y; const d = Math.hypot(dx, dy) || 0.001; ax += (dx / d) * (d - restLen) * 6; ay += (dy / d) * (d - restLen) * 6; }
-            ax += ((l.x + r.x) / 2 - p.x) * 14; ay += ((l.y + r.y) / 2 - p.y) * 14;
-            const nx = (r.y - l.y) * sign, ny = -(r.x - l.x) * sign; const nl = Math.hypot(nx, ny) || 0.001;
-            ax += (nx / nl) * pressureK; ay += (ny / nl) * pressureK;
-            for (const d of dents) { const dx = p.x - d.x, dy = p.y - d.y; const dist = Math.hypot(dx, dy) || 0.001; const w = Math.exp(-((dist / (R * 0.2)) ** 2)); ax += (dx / dist) * d.depth * 900 * w; ay += (dy / dist) * d.depth * 900 * w; }
-            p.vx += ax * hs; p.vy += ay * hs;
-          }
-        };
-        step(outer, 1); step(inner, -1);
+        const restLen = (TAU * R) / N;
+        for (let i = 0; i < N; i++) {
+          const p = outer[i], l = outer[(i + N - 1) % N], r = outer[(i + 1) % N];
+          if (near(p) > REACH) { p.vx = 0; p.vy = 0; continue; }
+          let ax = 0, ay = 0;
+          for (const o of [l, r]) { const dx = o.x - p.x, dy = o.y - p.y; const d = Math.hypot(dx, dy) || 0.001; ax += (dx / d) * (d - restLen) * 6; ay += (dy / d) * (d - restLen) * 6; }
+          ax += ((l.x + r.x) / 2 - p.x) * 14; ay += ((l.y + r.y) / 2 - p.y) * 14;
+          const nx = r.y - l.y, ny = -(r.x - l.x); const nl = Math.hypot(nx, ny) || 0.001;
+          ax += (nx / nl) * pressureK; ay += (ny / nl) * pressureK;
+          for (const d of dents) { const dx = p.x - d.x, dy = p.y - d.y; const dist = Math.hypot(dx, dy) || 0.001; const w = Math.exp(-((dist / (R * 0.2)) ** 2)); ax += (dx / dist) * d.depth * 900 * w; ay += (dy / dist) * d.depth * 900 * w; }
+          p.vx += ax * hs; p.vy += ay * hs;
+        }
         for (const f of fingers.values()) {
           const reach = R * 0.36;
-          for (const p of [...outer, ...inner]) {
+          for (const p of outer) {
             const dx = p.x - f.x, dy = p.y - f.y; const d = Math.hypot(dx, dy) || 0.001;
             if (d > reach) continue;
             const w = 1 - d / reach;
@@ -355,27 +387,15 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
             if (d < FINGER_R) { const push = FINGER_R - d; p.x += (dx / d) * push; p.y += (dy / d) * push; p.vx *= 0.5; p.vy *= 0.5; }
           }
         }
-        // 고리 두께 — 구멍이 바깥에 붙지 않게
-        const minThick = R * 0.22;
-        for (const q of inner) for (const p of outer) {
-          const dx = p.x - q.x, dy = p.y - q.y;
-          if (Math.abs(dx) > minThick || Math.abs(dy) > minThick) continue;
-          const d = Math.hypot(dx, dy) || 0.001;
-          if (d < minThick) { const push = (minThick - d) * 0.5; p.x += (dx / d) * push; p.y += (dy / d) * push; q.x -= (dx / d) * push; q.y -= (dy / d) * push; }
-        }
         const dampK = Math.exp(-26 * hs);
-        for (const loop of [outer, inner]) {
-          const n = loop.length; const vxs = new Float32Array(n), vys = new Float32Array(n);
-          for (let i = 0; i < n; i++) { const l = loop[(i + n - 1) % n], r = loop[(i + 1) % n], p = loop[i]; vxs[i] = p.vx * 0.2 + (l.vx + r.vx) * 0.4; vys[i] = p.vy * 0.2 + (l.vy + r.vy) * 0.4; }
-          for (let i = 0; i < n; i++) { const p = loop[i]; p.vx = vxs[i] * dampK; p.vy = vys[i] * dampK; p.x = clamp(p.x + p.vx * hs, 6, c.w - 6); p.y = clamp(p.y + p.vy * hs, 6, c.h - 6); }
-        }
+        const vxs = new Float32Array(N), vys = new Float32Array(N);
+        for (let i = 0; i < N; i++) { const l = outer[(i + N - 1) % N], r = outer[(i + 1) % N], p = outer[i]; vxs[i] = p.vx * 0.2 + (l.vx + r.vx) * 0.4; vys[i] = p.vy * 0.2 + (l.vy + r.vy) * 0.4; }
+        for (let i = 0; i < N; i++) { const p = outer[i]; p.vx = vxs[i] * dampK; p.vy = vys[i] * dampK; p.x = clamp(p.x + p.vx * hs, 6, c.w - 6); p.y = clamp(p.y + p.vy * hs, 6, c.h - 6); }
       }
-      outer = resample(outer); inner = resample(inner);
-      for (const loop of [outer, inner]) {
-        const n = loop.length; const sx = new Float32Array(n), sy = new Float32Array(n);
-        for (let i = 0; i < n; i++) { const l = loop[(i + n - 1) % n], r = loop[(i + 1) % n], p = loop[i]; sx[i] = lerp(p.x, (l.x + r.x) / 2, 0.12); sy[i] = lerp(p.y, (l.y + r.y) / 2, 0.12); }
-        for (let i = 0; i < n; i++) { loop[i].x = sx[i]; loop[i].y = sy[i]; }
-      }
+      outer = resample(outer);
+      const sx = new Float32Array(N), sy = new Float32Array(N);
+      for (let i = 0; i < N; i++) { const l = outer[(i + N - 1) % N], r = outer[(i + 1) % N], p = outer[i]; sx[i] = lerp(p.x, (l.x + r.x) / 2, 0.12); sy[i] = lerp(p.y, (l.y + r.y) / 2, 0.12); }
+      for (let i = 0; i < N; i++) { outer[i].x = sx[i]; outer[i].y = sy[i]; }
       bbox();
     }
 
@@ -385,91 +405,76 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
     ctx.fillStyle = bg; ctx.fillRect(0, 0, c.w, c.h);
     const midX = (minX + maxX) / 2, midY = (minY + maxY) / 2, big = Math.max(bw, bh);
 
-    const traceLoop = (loop: Node[]) => {
-      const n = loop.length;
-      for (let i = 0; i < n; i++) {
-        const a = loop[i], b = loop[(i + 1) % n]; const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-        if (i === 0) ctx.moveTo(mx, my); else ctx.quadraticCurveTo(a.x, a.y, mx, my);
+    const traceLoop = (g: CanvasRenderingContext2D) => {
+      for (let i = 0; i < N; i++) {
+        const a = outer[i], b = outer[(i + 1) % N]; const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        if (i === 0) g.moveTo(mx, my); else g.quadraticCurveTo(a.x, a.y, mx, my);
       }
-      const a0 = loop[0], b0 = loop[1];
-      ctx.quadraticCurveTo(a0.x, a0.y, (a0.x + b0.x) / 2, (a0.y + b0.y) / 2);
-      ctx.closePath();
+      const a0 = outer[0], b0 = outer[1];
+      g.quadraticCurveTo(a0.x, a0.y, (a0.x + b0.x) / 2, (a0.y + b0.y) / 2);
+      g.closePath();
     };
-    const traceDonut = () => { ctx.beginPath(); traceLoop(outer); traceLoop(inner); };
 
-    // 접촉 그림자
+    // 접촉 그림자 (구멍 아래 바닥도 몸 밑이라 함께 어둡다)
     for (let k = 6; k >= 1; k--) {
       ctx.save(); ctx.translate(midX + big * 0.012, midY + big * 0.03); ctx.scale(1 + k * 0.014, 1 + k * 0.014); ctx.translate(-midX, -midY);
-      traceDonut(); ctx.fillStyle = "rgba(0, 10, 14, 0.09)"; ctx.fill("evenodd"); ctx.restore();
+      ctx.beginPath(); traceLoop(ctx); ctx.fillStyle = "rgba(0, 10, 14, 0.09)"; ctx.fill(); ctx.restore();
     }
 
-    // 속살 — 파스텔을 조금 어둡고 탁하게, 보슬한 알갱이
-    traceDonut();
-    ctx.save();
-    ctx.clip("evenodd");
-    const seg = 48;
-    for (let i = 0; i < seg; i++) {
-      const a0 = (i / seg) * TAU, a1 = ((i + 1.04) / seg) * TAU;
-      const [r, g, b] = sectionColor(0.5 + Math.cos((a0 + a1) / 2) * 0.3, 0.5 + Math.sin((a0 + a1) / 2) * 0.3, 0);
-      // 섞임이 커지면 왁스 색이 스며 조금 밝아진다
-      const m = 0.25 * mix;
-      ctx.fillStyle = `rgb(${lerp(r * 0.9, 240, m) | 0},${lerp(g * 0.84, 236, m) | 0},${lerp(b * 0.86, 232, m) | 0})`;
-      ctx.beginPath(); ctx.moveTo(midX, midY); ctx.arc(midX, midY, big, a0, a1); ctx.closePath(); ctx.fill();
-    }
-    ctx.globalAlpha = 0.3;
-    ctx.drawImage(grain, minX, minY, bw, bh);
-    ctx.globalAlpha = 1;
-    // 두께 — 바깥 가장자리와 구멍 가장자리 안쪽의 옅은 어둠
+    // 몸 합치기 — 속살 위에만 결·두께·광택이 얹히게 source-atop
+    bctx.globalCompositeOperation = "source-over";
+    bctx.clearRect(0, 0, c.w, c.h);
+    bctx.drawImage(clay, minX, minY, bw, bh);
+    bctx.globalCompositeOperation = "source-atop";
+    bctx.globalAlpha = 0.3; bctx.drawImage(grain, minX, minY, bw, bh); bctx.globalAlpha = 1;
     for (let k = 0; k < 6; k++) {
       const f = k / 5;
-      ctx.lineWidth = big * 0.08 * (1 - f) + 2;
-      ctx.strokeStyle = `rgba(60, 40, 60, ${0.05 + f * 0.03})`;
-      ctx.beginPath(); traceLoop(outer); ctx.stroke();
-      ctx.beginPath(); traceLoop(inner); ctx.stroke();
+      bctx.lineWidth = big * 0.08 * (1 - f) + 2;
+      bctx.strokeStyle = `rgba(60, 40, 60, ${0.05 + f * 0.03})`;
+      bctx.beginPath(); traceLoop(bctx); bctx.stroke();
     }
-    // 떨어진 조각과 갈린 가루
-    ctx.globalAlpha = clamp(1 - mix * 0.8, 0, 1);
-    ctx.drawImage(flakes, minX, minY, bw, bh);
-    ctx.globalAlpha = 1;
-    // 껍질 — 섞일수록 사라진다
-    if (mix < 0.999) {
-      ctx.globalAlpha = clamp(1 - mix, 0, 1);
-      ctx.drawImage(wax, minX, minY, bw, bh);
-      // 광택 — 왼쪽 위 넓은 하이라이트 + 고리를 따라 도는 밝은 띠
-      const hl = ctx.createRadialGradient(minX + bw * 0.33, minY + bh * 0.28, 0, minX + bw * 0.36, minY + bh * 0.32, big * 0.32);
-      hl.addColorStop(0, "rgba(255,255,255,0.5)"); hl.addColorStop(0.55, "rgba(255,255,255,0.12)"); hl.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = hl; ctx.fillRect(minX, minY, bw, bh);
-      for (const [lw, al] of [[0.09, 0.05], [0.055, 0.08], [0.025, 0.14]] as const) {
-        ctx.strokeStyle = `rgba(255,255,255,${al})`; ctx.lineWidth = big * lw;
-        ctx.beginPath(); ctx.ellipse(midX, midY, ((bw / 2 + hole) / 2) * 0.98, ((bh / 2 + hole) / 2) * 0.98, 0, Math.PI * 1.08, Math.PI * 1.5); ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
+    bctx.globalCompositeOperation = "source-over";
+    bctx.drawImage(flakes, minX, minY, bw, bh);
+    bctx.drawImage(wax, minX, minY, bw, bh);
+    bctx.globalCompositeOperation = "source-atop";
+    const hl = bctx.createRadialGradient(minX + bw * 0.33, minY + bh * 0.28, 0, minX + bw * 0.36, minY + bh * 0.32, big * 0.32);
+    hl.addColorStop(0, "rgba(255,255,255,0.42)"); hl.addColorStop(0.55, "rgba(255,255,255,0.1)"); hl.addColorStop(1, "rgba(255,255,255,0)");
+    bctx.fillStyle = hl; bctx.fillRect(minX, minY, bw, bh);
+    for (const [lw, al] of [[0.09, 0.05], [0.055, 0.08], [0.025, 0.14]] as const) {
+      bctx.strokeStyle = `rgba(255,255,255,${al})`; bctx.lineWidth = big * lw;
+      bctx.beginPath(); bctx.ellipse(midX, midY, (bw / 2) * 0.67, (bh / 2) * 0.67, 0, Math.PI * 1.08, Math.PI * 1.5); bctx.stroke();
     }
-    // 자국
+    // 자국 — 뚫린 곳은 벌써 비어 있으니 그 둘레만 어둡다
     for (const d of dents) {
       const rr = FINGER_R * (1 + d.depth * 0.6), k = d.depth;
-      const g1 = ctx.createRadialGradient(d.x, d.y, 0, d.x, d.y, rr * 1.7);
-      g1.addColorStop(0, `rgba(60, 30, 60, ${0.11 * k})`); g1.addColorStop(0.35, `rgba(60, 30, 60, ${0.06 * k})`); g1.addColorStop(0.62, "rgba(40,20,40,0)"); g1.addColorStop(1, "rgba(40,20,40,0)");
-      ctx.fillStyle = g1; ctx.fillRect(d.x - rr * 2, d.y - rr * 2, rr * 4, rr * 4);
-      const g3 = ctx.createRadialGradient(d.x + rr * 0.45, d.y + rr * 0.45, rr * 0.15, d.x + rr * 0.25, d.y + rr * 0.25, rr * 1.15);
+      const g1 = bctx.createRadialGradient(d.x, d.y, 0, d.x, d.y, rr * 1.7);
+      g1.addColorStop(0, `rgba(60, 30, 60, ${(0.11 + 0.2 * d.through) * k})`); g1.addColorStop(0.35, `rgba(60, 30, 60, ${(0.06 + 0.1 * d.through) * k})`); g1.addColorStop(0.62, "rgba(60,30,60,0)"); g1.addColorStop(1, "rgba(60,30,60,0)");
+      bctx.fillStyle = g1; bctx.fillRect(d.x - rr * 2, d.y - rr * 2, rr * 4, rr * 4);
+      const g3 = bctx.createRadialGradient(d.x + rr * 0.45, d.y + rr * 0.45, rr * 0.15, d.x + rr * 0.25, d.y + rr * 0.25, rr * 1.15);
       g3.addColorStop(0, `rgba(255, 255, 255, ${0.2 * k})`); g3.addColorStop(0.6, `rgba(255, 255, 255, ${0.06 * k})`); g3.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = g3; ctx.fillRect(d.x - rr * 2, d.y - rr * 2, rr * 4, rr * 4);
+      bctx.fillStyle = g3; bctx.fillRect(d.x - rr * 2, d.y - rr * 2, rr * 4, rr * 4);
     }
-    ctx.restore();
+    bctx.globalCompositeOperation = "source-over";
 
-    // 가장자리
-    traceDonut();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = "rgba(255,255,255,0.35)";
-    ctx.stroke();
-    void t;
+    ctx.save();
+    ctx.beginPath(); traceLoop(ctx); ctx.clip();
+    ctx.drawImage(body, 0, 0, c.w, c.h);
+    ctx.restore();
   });
 
   const setFinger = (id: number, x: number, y: number, dx: number, dy: number, pressed: boolean, dt = 1 / 60) => {
     const f = fingers.get(id);
     const vx = dx / dt, vy = dy / dt;
-    if (f) { f.x = x; f.y = y; f.vx = vx; f.vy = vy; f.pressed = pressed; f.at = performance.now(); if (pressed) { f.dent.x = x; f.dent.y = y; } return f; }
-    const dent: Dent = { x, y, depth: 0, held: pressed };
+    if (f) {
+      f.x = x; f.y = y; f.vx = vx; f.vy = vy; f.pressed = pressed; f.at = performance.now();
+      if (pressed) {
+        // 끌면 뚫기는 멈춘다 — 이미 뚫린 자국은 두고 새 자국을 잇는다
+        if (f.dent.punched > 0 && Math.hypot(x - f.dent.x, y - f.dent.y) > FINGER_R * 0.6) { f.dent.held = false; f.dent = { x, y, depth: 1, held: true, through: 0, punched: 0 }; dents.push(f.dent); }
+        else { f.dent.x = x; f.dent.y = y; if (Math.hypot(dx, dy) > 1.5 && f.dent.punched === 0) f.dent.through = 0; }
+      }
+      return f;
+    }
+    const dent: Dent = { x, y, depth: 0, held: pressed, through: 0, punched: 0 };
     if (pressed) dents.push(dent);
     const nf: Finger = { x, y, vx, vy, pressed, at: performance.now(), dent, lastCrackX: x, lastCrackY: y };
     fingers.set(id, nf);
@@ -483,9 +488,9 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
     pointerDown(x, y, id) {
       bbox();
       const f = fingers.get(id);
-      if (f) { f.dent = { x, y, depth: 0, held: true }; dents.push(f.dent); f.pressed = true; f.x = x; f.y = y; f.vx = 0; f.vy = 0; f.at = performance.now(); f.lastCrackX = x; f.lastCrackY = y; }
+      if (f) { f.dent = { x, y, depth: 0, held: true, through: 0, punched: 0 }; dents.push(f.dent); f.pressed = true; f.x = x; f.y = y; f.vx = 0; f.vy = 0; f.at = performance.now(); f.lastCrackX = x; f.lastCrackY = y; }
       else setFinger(id, x, y, 0, 0, true);
-      if (mix < 0.85 && onDonut(x, y)) shatter(x, y, shatters.length === 0);
+      if (onBody(x, y)) shatter(x, y, shatters.length === 0);
     },
     pointerMove(x, y, dx, dy, id, pressed) {
       const sp = Math.hypot(dx, dy);
@@ -493,10 +498,10 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
       const f = setFinger(id, x, y, dx * k, dy * k, pressed);
       if (!pressed || sp < 0.5) return;
       bbox();
-      if (!onDonut(x, y)) return;
+      if (!insideLoop(outer, x, y)) return;
       if (shatters.length === 0) return; // 굳은 껍질은 문질러서는 안 부서진다 — 먼저 꾹
       kneadAt(x, y, dx, dy);
-      if (mix < 0.6 && Math.hypot(x - f.lastCrackX, y - f.lastCrackY) > 70) {
+      if (Math.hypot(x - f.lastCrackX, y - f.lastCrackY) > 70 && onBody(x, y)) {
         f.lastCrackX = x; f.lastCrackY = y;
         shatter(x, y);
         const sh = shatters[shatters.length - 1]; sh.grow = 0.7; sh.stage = 2; drawCrackLines(sh);
@@ -509,7 +514,7 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
       if (id !== 0) fingers.delete(id);
     },
     wheel() {},
-    tilt(fx, fy) { tilt = { x: fx, y: fy }; },
+    tilt() {},
     idle() {},
     clear() { spawn(); },
     setSound(on) { sound = on; },
