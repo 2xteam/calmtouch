@@ -1,3 +1,4 @@
+import { ScrollKeeper } from "@/components/ScrollKeeper";
 import { TopNav } from "@/components/TopNav";
 import { SiteFooter } from "@/components/SiteFooter";
 
@@ -12,6 +13,8 @@ export default function AppShellLayout({ children }: Readonly<{ children: React.
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg-primary)" }}>
       <TopNav />
+      {/* 장면에서 돌아오면 보던 자리로 — 목록 화면 공통 */}
+      <ScrollKeeper />
       <div
         style={{
           maxWidth: 720,

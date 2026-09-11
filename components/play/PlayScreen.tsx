@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ENGINES } from "@/lib/engines/index";
 import { EngineUnsupportedError, type SceneEngine } from "@/lib/engines/types";
@@ -28,6 +29,7 @@ export function PlayScreen({ scene }: { scene: Scene }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<SceneEngine | null>(null);
+  const router = useRouter();
 
   const [status, setStatus] = useState<Status>("loading");
   const [reason, setReason] = useState<string>("");
@@ -301,6 +303,17 @@ export function PlayScreen({ scene }: { scene: Scene }) {
     showUi();
   };
 
+  /**
+   * 뒤로 — 목록에서 들어왔으면 **브라우저 뒤로가기**로 돌아간다. 그래야 보던 스크롤 자리가 그대로다.
+   * `/scenes` 로 새로 이동하면 목록 맨 위로 튄다(2026-09-11 사용자 지적).
+   * 링크로 바로 들어와 이 앱 안의 이전 페이지가 없으면 목록으로 이동한다.
+   */
+  const goBack = () => {
+    const cameFromApp = document.referrer.startsWith(window.location.origin) && window.history.length > 1;
+    if (cameFromApp) router.back();
+    else router.push("/scenes");
+  };
+
   return (
     <div ref={rootRef} className="play" data-ui={uiVisible ? "shown" : "hidden"}>
       <canvas ref={canvasRef} className="play-canvas" aria-label={`${scene.title} 장면`} />
@@ -317,11 +330,11 @@ export function PlayScreen({ scene }: { scene: Scene }) {
       ) : null}
 
       <div className="play-ui play-top">
-        <Link href="/scenes" className="play-btn" aria-label="장면 목록으로">
+        <button type="button" className="play-btn" aria-label="장면 목록으로" onClick={goBack}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-        </Link>
+        </button>
         <div className="play-title">
           <span className="play-title-name">{scene.title}</span>
           <span className="play-title-sub">{scene.subtitle}</span>
