@@ -183,9 +183,9 @@ export const SCENES: Scene[] = [
     thumb: `${glow(50, 55, "rgba(127,216,176,0.95)", 32)},linear-gradient(170deg, #04161b, #0b262e)`,
   },
   {
-    slug: "wax", title: "왁뿌", subtitle: "굳은 왁스 껍질을 꾹 누르면 바삭 갈라지고, 속의 슬라임이 드러나요.",
-    emoji: "🥚", category: "things", engine: "slime", color: { kind: "single", defaultColor: "#f08ca4", presets: SINGLE_PRESETS }, idleDrift: true, tilt: true, sound: true,
-    params: { wax: true },
+    slug: "wax", title: "왁뿌", subtitle: "왁스 껍질을 꾹 눌러 부수고, 문지르면 속 점토와 섞여 사라져요.",
+    emoji: "🥚", category: "things", engine: "slime", color: { kind: "single", defaultColor: "#f08ca4", presets: SINGLE_PRESETS }, idleDrift: false, tilt: true, sound: true,
+    params: { wax: true, clay: true },
     thumb: `${glow(50, 50, "rgba(239,233,220,0.95)", 34)},${glow(50, 50, "rgba(240,140,164,0.6)", 40)},linear-gradient(170deg, #04161b, #0b262e)`,
   },
   {

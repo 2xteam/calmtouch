@@ -56,6 +56,10 @@ async function gesture(page, slug) {
     for (const [x, y] of [[W * 0.5, H * 0.5], [W * 0.38, H * 0.38], [W * 0.62, H * 0.6]]) {
       await m.move(x, y); await m.down(); await page.waitForTimeout(650); await m.up(); await page.waitForTimeout(150);
     }
+    // 조금 문질러 섞이는 중간 모습
+    await m.move(W * 0.4, H * 0.5); await m.down();
+    for (let i = 0; i < 14; i++) await m.move(W * 0.4 + i * 10, H * 0.5 + Math.sin(i / 2) * 20, { steps: 2 });
+    await m.up();
     return;
   }
   if (slug === "breath") {

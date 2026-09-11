@@ -1,11 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
   <!--
-    CalmTouch 앱 아이콘 — 손끝이 닿은 자리에서 퍼지는 물결.
-    다섯 앱과 같은 기하학(짙은 먹청 타일 + 게이지 호)을 쓰고 안쪽 심볼만 다르다.
-    두 호는 같은 <circle>을 stroke-dasharray 만 바꿔 그린다 — 따로 <path>로 그리면 끝점이 어긋난다.
-    심볼은 게이지 호 안쪽(중심에서 반경 54.5) 안에 들어간다.
-    물결은 끊긴 고리 두 개로 그린다 — 완전한 원이면 표적(target)으로 읽힌다.
-    → my-obsidian-vault / 20-Design/앱 공통 UI와 아이콘.md · 10-Projects/CalmTouch.md
+    CalmTouch 앱 아이콘 (2026-09-11 두 번째 판) — 손끝이 닿은 자리에서 퍼지는 물결.
+    가족 공통의 게이지 호는 뺐다(사용자 결정). 타일 색만 가족과 같다.
+    고리 셋은 안쪽이 굵고 바깥이 가늘어져 "퍼지며 잔잔해지는" 순서를 읽게 하고, 트인 자리를 서로 다르게 돌려
+    표적(target)이 아니라 물결로 보이게 했다. 닿은 점만 가족의 골드.
+    → my-obsidian-vault / 10-Projects/CalmTouch.md
   -->
   <defs>
     <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1" gradientTransform="rotate(15)">
@@ -16,20 +15,17 @@
 
   <rect width="192" height="192" rx="44" fill="url(#tile)"/>
 
-  <!-- 게이지 호 -->
-  <g transform="rotate(158.96 96 106.46)">
-    <circle cx="96" cy="106.46" r="60" fill="none" stroke="#4a95a6"
-            stroke-width="11" stroke-linecap="round" stroke-dasharray="232.6 144.4"/>
-    <circle cx="96" cy="106.46" r="60" fill="none" stroke="#e8d18a"
-            stroke-width="11" stroke-linecap="round" stroke-dasharray="128 249"/>
+  <g fill="none" stroke="#eef7f8" stroke-linecap="round">
+    <!-- 바깥 고리: r 58, 둘레 364.4 — 3/4 만 -->
+    <circle cx="96" cy="96" r="58" stroke-width="4" stroke-opacity="0.55"
+            stroke-dasharray="272 92.4" transform="rotate(-62 96 96)"/>
+    <!-- 가운데 고리: r 38, 둘레 238.8 -->
+    <circle cx="96" cy="96" r="38" stroke-width="6" stroke-opacity="0.8"
+            stroke-dasharray="188 50.8" transform="rotate(118 96 96)"/>
+    <!-- 안쪽 고리: r 20, 둘레 125.7 -->
+    <circle cx="96" cy="96" r="20" stroke-width="8"
+            stroke-dasharray="100 25.7" transform="rotate(-8 96 96)"/>
   </g>
-
-  <!-- 물결 — 닿은 점과 끊긴 고리 둘. 선폭 11, round cap (다른 앱 심볼과 같다) -->
-  <g fill="none" stroke="#eef7f8" stroke-width="11" stroke-linecap="round">
-    <!-- 안쪽 고리: 둘레 138.2 = 2 × (52 + 17.1) -->
-    <circle cx="96" cy="101" r="22" stroke-dasharray="52 17.1" transform="rotate(-30 96 101)"/>
-    <!-- 바깥 고리: 둘레 251.3 = 3 × (68 + 15.77) -->
-    <circle cx="96" cy="101" r="40" stroke-dasharray="68 15.77" transform="rotate(20 96 101)"/>
-  </g>
-  <circle cx="96" cy="101" r="7.5" fill="#eef7f8"/>
+  <!-- 닿은 점 — 골드 -->
+  <circle cx="96" cy="96" r="6.5" fill="#e8d18a"/>
 </svg>
