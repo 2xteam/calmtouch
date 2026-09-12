@@ -67,9 +67,9 @@ async function gesture(page, slug) {
     await m.up();
     return;
   }
-  if (slug === "keycap") {
-    // 가운데 키캡을 눌러 LED 가 번쩍인 순간
-    await m.move(W * 0.5, H * 0.52); await m.down();
+  if (slug.startsWith("keycap")) {
+    // 앞줄 키캡 하나를 눌러 내려앉은 순간 (사선이라 가운데보다 조금 아래)
+    await m.move(W * 0.5, H * 0.6); await m.down();
     await page.waitForTimeout(90);
     return;
   }
