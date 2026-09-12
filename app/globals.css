@@ -610,7 +610,6 @@ a {
 }
 
 .scene-row {
-  --row-pad: clamp(22px, 5vw, 32px);
   display: flex;
   gap: 14px;
   margin-top: 10px;
@@ -626,6 +625,67 @@ a {
 
 .scene-row::-webkit-scrollbar {
   display: none;
+}
+
+/* 마우스 기기 — 양 끝 화살표. 폰에서는 손으로 미니 숨긴다 */
+.scene-row-wrap {
+  --row-pad: clamp(22px, 5vw, 32px);
+  position: relative;
+}
+
+.scene-row[data-drag="yes"] {
+  scroll-snap-type: none;
+  cursor: grabbing;
+}
+
+.scene-row[data-drag="yes"] .scene-card {
+  pointer-events: none;
+}
+
+.scene-row-arrow {
+  display: none;
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  width: 40px;
+  height: 40px;
+  margin-top: -20px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: 0 8px 22px rgba(6, 34, 40, 0.16);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.scene-row-arrow--left {
+  left: calc(-1 * var(--row-pad, 24px) + 6px);
+}
+
+.scene-row-arrow--right {
+  right: calc(-1 * var(--row-pad, 24px) + 6px);
+}
+
+.scene-row-arrow:disabled {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.scene-row-arrow:hover {
+  transform: scale(1.06);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .scene-row-arrow {
+    display: inline-flex;
+  }
+
+  .scene-row {
+    cursor: grab;
+  }
 }
 
 .scene-row-item {
@@ -897,6 +957,60 @@ a {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* 조정 값 — −/+ 스텝퍼 (키캡 수 같은 것) */
+.play-steppers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.play-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 0 6px 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-on-dark);
+  background: rgba(6, 26, 31, 0.55);
+  color: var(--on-dark);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.play-stepper-label {
+  margin-right: 6px;
+  color: var(--on-dark-dim);
+}
+
+.play-stepper-value {
+  min-width: 22px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.play-stepper-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 0;
+  background: rgba(238, 247, 248, 0.1);
+  color: var(--on-dark);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.play-stepper-btn:hover {
+  background: rgba(238, 247, 248, 0.2);
+}
+
+.play-stepper-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
 }
 
 .play-title {

@@ -47,6 +47,14 @@ export function PlayScreen({ scene }: { scene: Scene }) {
   const [tiltNote, setTiltNote] = useState<string>("");
   const lastOrientationAt = useRef(0);
   const [colorReady, setColorReady] = useState(false);
+  /** 장면 고유 조정 값 — scene.controls 의 기본값으로 시작하고, 바뀌면 엔진 setParam 으로 */
+  const [params, setParams] = useState<Record<string, number | boolean>>(() =>
+    Object.fromEntries((scene.controls ?? []).map((ctl) => [ctl.key, ctl.default])),
+  );
+  const setParam = (key: string, value: number | boolean) => {
+    setParams((p) => ({ ...p, [key]: value }));
+    engineRef.current?.setParam?.(key, value);
+  };
 
   /* 이벤트 핸들러가 최신 설정을 읽도록 ref 에 비춘다 */
   const settings = useRef({ drift, tilt });
@@ -362,10 +370,35 @@ export function PlayScreen({ scene }: { scene: Scene }) {
         </div>
 
         <div className="play-tools">
-          <Toggle label="흐름" on={drift} onClick={() => setDrift((v) => !v)} />
+          {scene.idleDrift ? <Toggle label="흐름" on={drift} onClick={() => setDrift((v) => !v)} /> : null}
           {scene.sound ? <Toggle label="소리" on={sound} onClick={toggleSound} /> : null}
           {tiltAvailable && scene.tilt !== false ? <Toggle label="기울기" on={tilt} onClick={toggleTilt} /> : null}
+          {(scene.controls ?? []).map((ctl) =>
+            ctl.kind === "switch" ? (
+              <Toggle key={ctl.key} label={ctl.label} on={params[ctl.key] === true} onClick={() => setParam(ctl.key, !(params[ctl.key] === true))} />
+            ) : null,
+          )}
         </div>
+        {(scene.controls ?? []).some((ctl) => ctl.kind === "stepper") ? (
+          <div className="play-steppers">
+            {(scene.controls ?? []).map((ctl) => {
+              if (ctl.kind !== "stepper") return null;
+              const v = Number(params[ctl.key] ?? ctl.default);
+              return (
+                <div key={ctl.key} className="play-stepper" role="group" aria-label={ctl.label}>
+                  <span className="play-stepper-label">{ctl.label}</span>
+                  <button type="button" className="play-stepper-btn" aria-label={`${ctl.label} 줄이기`} disabled={v <= ctl.min} onClick={() => setParam(ctl.key, Math.max(ctl.min, v - 1))}>
+                    −
+                  </button>
+                  <span className="play-stepper-value" aria-live="polite">{v}</span>
+                  <button type="button" className="play-stepper-btn" aria-label={`${ctl.label} 늘리기`} disabled={v >= ctl.max} onClick={() => setParam(ctl.key, Math.min(ctl.max, v + 1))}>
+                    +
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
         {tiltNote ? <p className="play-note">{tiltNote}</p> : null}
 
         {scene.color.kind === "single" ? (

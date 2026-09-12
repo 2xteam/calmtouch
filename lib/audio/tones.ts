@@ -70,6 +70,30 @@ export function thud(pitch = 180, vel = 0.5) {
 }
 
 /**
+ * 톡 — 기계식 키캡이 바닥에 닿는 소리. 짧은 잡음 "틱" + 낮은 몸통 울림 "톡". 키캡 장면.
+ *   pitch 0.8~1.2 배율 — 키마다 조금씩 다르게
+ */
+export function thock(pitch = 1) {
+  const c = ensureAudio();
+  if (!c || !master) return;
+  const now = c.currentTime;
+  // 틱 — 아주 짧은 잡음, 높은 대역
+  const n = Math.floor(c.sampleRate * 0.03);
+  const buf = c.createBuffer(1, n, c.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n) ** 2;
+  const src = c.createBufferSource(); src.buffer = buf;
+  const hp = c.createBiquadFilter(); hp.type = "bandpass"; hp.frequency.value = 2600 * pitch; hp.Q.value = 0.8;
+  const g1 = c.createGain(); g1.gain.setValueAtTime(0.5, now); g1.gain.exponentialRampToValueAtTime(0.0001, now + 0.04);
+  src.connect(hp).connect(g1).connect(master); src.start(now); src.stop(now + 0.05);
+  // 톡 — 낮은 사인 몸통, 빠르게 떨어지는 음높이
+  const osc = c.createOscillator(); osc.type = "sine";
+  osc.frequency.setValueAtTime(420 * pitch, now); osc.frequency.exponentialRampToValueAtTime(140 * pitch, now + 0.05);
+  const g2 = c.createGain(); g2.gain.setValueAtTime(0.0001, now); g2.gain.exponentialRampToValueAtTime(0.45, now + 0.003); g2.gain.exponentialRampToValueAtTime(0.0001, now + 0.11);
+  osc.connect(g2).connect(master); osc.start(now); osc.stop(now + 0.13);
+}
+
+/**
  * 바삭 — 굳은 왁스가 갈라지는 소리. 짧은 잡음 알갱이 서너 개를 띄엄띄엄.
  * 왁뿌(왁스 뿌시기 볼) 장면. strength 0~1
  */

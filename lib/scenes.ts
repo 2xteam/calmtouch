@@ -1,5 +1,6 @@
 import type { FluidConfig } from "@/lib/fluid/FluidSim";
 import { isEngineReady, type EngineKey } from "@/lib/engines/index";
+import type { SceneControl } from "@/lib/engines/types";
 
 /**
  * 장면(scene) 목록 — 이 앱의 콘텐츠 원본.
@@ -19,7 +20,7 @@ export const CATEGORIES: Record<SceneCategory, { label: string; eyebrow: string;
   surface: { label: "물과 유리", eyebrow: "WATER & GLASS", lead: "수면과 유리창. 만진 자리가 잠깐 바뀌고 다시 돌아와요." },
   light: { label: "빛과 무늬", eyebrow: "LIGHT & PATTERN", lead: "별과 무늬. 흩뜨리면 제자리로, 건드리면 새 무늬로." },
   living: { label: "살아 있는 것", eyebrow: "LIVING THINGS", lead: "손끝을 피하고, 따라오고, 저희끼리 무리를 지어요." },
-  things: { label: "만지는 물건", eyebrow: "THINGS TO TOUCH", lead: "공, 슬라임, 천, 블록. 손에 잡히는 감촉을 화면으로." },
+  things: { label: "만지는 물건", eyebrow: "THINGS TO TOUCH", lead: "공, 슬라임, 천, 블록, 키캡. 손에 잡히는 감촉을 화면으로." },
   breath: { label: "숨", eyebrow: "BREATH", lead: "색 구름이 숨에 맞춰 퍼지고 모여요. 누르고 있는 동안 들이쉬어요." },
 };
 
@@ -53,6 +54,8 @@ export type Scene = {
   thumb: string;
   /** 목록 첫 화면에 먼저 보여 줄 장면 */
   featured?: boolean;
+  /** 장면 고유 조정 값 — 도구 패널에 −/+ 나 스위치로 뜬다 → lib/engines/types.ts */
+  controls?: SceneControl[];
 };
 
 /** 한 가지 색 장면에서 고를 수 있는 색. 짙은 바탕 위에서 잘 보이는 밝은 값들 */
@@ -191,6 +194,15 @@ export const SCENES: Scene[] = [
     slug: "wax", title: "왁뿌", subtitle: "파스텔 왁스를 입힌 도넛. 꾹 누르면 껍질이 조각조각 갈라지고, 문지르면 속 점토와 섞여요.",
     emoji: "🍩", category: "things", engine: "wax", color: { kind: "palette", colors: ["#f6b7cf", "#b9d7f2", "#f7ecb0"] }, idleDrift: false, tilt: true, sound: true,
     thumb: `${glow(50, 50, "rgba(246,183,207,0.9)", 34)},${glow(70, 40, "rgba(185,215,242,0.8)", 30)},linear-gradient(170deg, #04161b, #0b262e)`,
+  },
+  {
+    slug: "keycap", title: "키캡", subtitle: "기계식 키캡을 톡톡. 자판으로 쳐도 눌려요. LED 를 켜면 색이 돌며 번쩍여요.",
+    emoji: "⌨️", category: "things", engine: "keycap", color: { kind: "palette", colors: ["#5fb8c9", "#b9a6f0", "#f08ca4"] }, idleDrift: false, tilt: false, sound: true,
+    controls: [
+      { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 3 },
+      { key: "led", label: "LED", kind: "switch", default: true },
+    ],
+    thumb: `${glow(50, 55, "rgba(95,184,201,0.7)", 30)},${glow(30, 55, "rgba(240,140,164,0.6)", 26)},linear-gradient(170deg, #04161b, #132a33)`,
   },
   {
     slug: "blocks", title: "블록 놀이", subtitle: "공을 몰아 쌓인 나무 블록을 밀어요. 미끄러지고 돌아가고, 기울이면 다 쏟아져요.",

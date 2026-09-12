@@ -29,7 +29,18 @@ export interface SceneEngine {
   setColor?(hex: string): void;
   /** 소리 켬/끔 (scene.sound 인 장면만) */
   setSound?(on: boolean): void;
+  /** 장면 고유 조정 값(scene.controls)이 바뀌었다 — 키캡 수, LED 켬/끔 같은 것 */
+  setParam?(key: string, value: number | boolean): void;
 }
+
+/**
+ * 장면 고유 조정 값 — 도구 패널에 그려진다. 값은 엔진의 `setParam` 으로 간다.
+ *   stepper  −/+ 로 정수를 고른다 (키캡 수 1~9)
+ *   switch   켬/끔 (LED)
+ */
+export type SceneControl =
+  | { key: string; label: string; kind: "stepper"; min: number; max: number; default: number }
+  | { key: string; label: string; kind: "switch"; default: boolean };
 
 export type EngineContext = {
   scene: Scene;

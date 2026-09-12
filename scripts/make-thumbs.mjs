@@ -67,6 +67,12 @@ async function gesture(page, slug) {
     await m.up();
     return;
   }
+  if (slug === "keycap") {
+    // 가운데 키캡을 눌러 LED 가 번쩍인 순간
+    await m.move(W * 0.5, H * 0.52); await m.down();
+    await page.waitForTimeout(90);
+    return;
+  }
   if (slug === "rainbow") {
     // 줄 하나를 눌러 휘게
     await m.move(W * 0.3, H * 0.62); await m.down();

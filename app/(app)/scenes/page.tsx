@@ -1,4 +1,5 @@
 import { SceneCard } from "@/components/SceneCard";
+import { SceneRow } from "@/components/SceneRow";
 import { Sheet } from "@/components/Sheet";
 import { CATEGORIES, CATEGORY_ORDER, scenesIn } from "@/lib/scenes";
 
@@ -21,13 +22,13 @@ export default function ScenesPage() {
               <span className="scene-row-count">{list.length}개</span>
               {list.length > 1 ? <span className="scene-row-hint">옆으로 밀어 보기 →</span> : null}
             </div>
-            <div className="scene-row" role="list" aria-label={`${cat.label} 장면`}>
+            <SceneRow label={cat.label}>
               {list.map((s) => (
                 <div key={s.slug} role="listitem" className="scene-row-item">
                   <SceneCard scene={s} />
                 </div>
               ))}
-            </div>
+            </SceneRow>
           </Sheet>
         );
       })}
