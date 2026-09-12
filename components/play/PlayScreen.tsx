@@ -18,8 +18,6 @@ import type { Scene } from "@/lib/scenes";
  * 손을 움직이는 내내 버튼이 떠 있으면 화면을 만지는 느낌이 깨진다.
  */
 
-/** 도구 패널 열림 상태를 기억하는 키 — 기기마다 한 번 정하면 그대로 */
-const PANEL_KEY = "calmtouch:panel";
 const IDLE_BEFORE_DRIFT_MS = 2200;
 const DRIFT_EVERY_MS = 1700;
 const TILT_EVERY_MS = 120;
@@ -34,8 +32,10 @@ export function PlayScreen({ scene }: { scene: Scene }) {
 
   const [status, setStatus] = useState<Status>("loading");
   const [reason, setReason] = useState<string>("");
-  /** 도구 패널 — 처음엔 접혀 있고, 연 채로 나가면 다음에도 열려 있다 */
+  /** 도구 패널 — 처음엔 접혀 있다. 패널 밖을 누르면 닫힌다(2026-09-12 사용자: 닫기 버튼이 불편) */
   const [panelOpen, setPanelOpen] = useState(false);
+  const panelRef = useRef<HTMLElement>(null);
+  const fabRef = useRef<HTMLButtonElement>(null);
   const [drift, setDrift] = useState(scene.idleDrift);
   const [tilt, setTilt] = useState(false);
   const [tiltAvailable, setTiltAvailable] = useState(false);
@@ -48,10 +48,10 @@ export function PlayScreen({ scene }: { scene: Scene }) {
   const lastOrientationAt = useRef(0);
   const [colorReady, setColorReady] = useState(false);
   /** 장면 고유 조정 값 — scene.controls 의 기본값으로 시작하고, 바뀌면 엔진 setParam 으로 */
-  const [params, setParams] = useState<Record<string, number | boolean>>(() =>
+  const [params, setParams] = useState<Record<string, number | boolean | string>>(() =>
     Object.fromEntries((scene.controls ?? []).map((ctl) => [ctl.key, ctl.default])),
   );
-  const setParam = (key: string, value: number | boolean) => {
+  const setParam = (key: string, value: number | boolean | string) => {
     setParams((p) => ({ ...p, [key]: value }));
     engineRef.current?.setParam?.(key, value);
   };
@@ -62,12 +62,18 @@ export function PlayScreen({ scene }: { scene: Scene }) {
     settings.current = { drift, tilt };
   }, [drift, tilt]);
 
-  const togglePanel = useCallback(() => {
-    setPanelOpen((v) => {
-      try { window.localStorage.setItem(PANEL_KEY, v ? "0" : "1"); } catch { /* 시크릿 모드 등 */ }
-      return !v;
-    });
-  }, []);
+  const togglePanel = useCallback(() => setPanelOpen((v) => !v), []);
+  useEffect(() => {
+    if (!panelOpen) return;
+    // 패널·도구 버튼 밖을 누르면 닫는다 — 캔버스를 만지기 시작하는 그 손짓으로
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node | null;
+      if (panelRef.current?.contains(t) || fabRef.current?.contains(t)) return;
+      setPanelOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [panelOpen]);
 
   const tiltBase = useRef<{ beta: number; gamma: number } | null>(null);
   const tiltNow = useRef<{ beta: number; gamma: number } | null>(null);
@@ -82,7 +88,6 @@ export function PlayScreen({ scene }: { scene: Scene }) {
     }
     setColorReady(true);
     rememberRecent(scene.slug);
-    try { setPanelOpen(window.localStorage.getItem(PANEL_KEY) === "1"); } catch { /* ignore */ }
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPanelOpen(false); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -340,6 +345,7 @@ export function PlayScreen({ scene }: { scene: Scene }) {
           </svg>
         </button>
         <button
+          ref={fabRef}
           type="button"
           className="play-btn play-fab"
           aria-label={panelOpen ? "도구 닫기" : "도구 열기"}
@@ -363,7 +369,7 @@ export function PlayScreen({ scene }: { scene: Scene }) {
       </div>
 
       {/* 도구 패널 — 떠 있는 카드. 열고 닫는 건 오직 사용자다 (저절로 숨지 않는다 · 2026-09-11 사용자 지적) */}
-      <section id="play-panel" className="play-panel" data-open={panelOpen ? "yes" : "no"} aria-hidden={!panelOpen} aria-label="장면 도구">
+      <section ref={panelRef} id="play-panel" className="play-panel" data-open={panelOpen ? "yes" : "no"} aria-hidden={!panelOpen} aria-label="장면 도구">
         <div className="play-title">
           <span className="play-title-name">{scene.title}</span>
           <span className="play-title-sub">{scene.subtitle}</span>
@@ -379,6 +385,23 @@ export function PlayScreen({ scene }: { scene: Scene }) {
             ) : null,
           )}
         </div>
+        {(scene.controls ?? []).map((ctl) => {
+          if (ctl.kind !== "choice") return null;
+          const v = String(params[ctl.key] ?? ctl.default);
+          return (
+            <div key={ctl.key} className="play-choice" role="radiogroup" aria-label={ctl.label}>
+              <span className="play-choice-label">{ctl.label}</span>
+              <div className="play-choice-opts">
+                {ctl.options.map((o) => (
+                  <button key={o.value} type="button" role="radio" aria-checked={v === o.value} className="play-choice-opt" onClick={() => setParam(ctl.key, o.value)}>
+                    {o.color ? <span className="play-choice-dot" style={{ background: o.color }} aria-hidden="true" /> : null}
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
         {(scene.controls ?? []).some((ctl) => ctl.kind === "stepper") ? (
           <div className="play-steppers">
             {(scene.controls ?? []).map((ctl) => {

@@ -21,7 +21,7 @@ export const CATEGORIES: Record<SceneCategory, { label: string; eyebrow: string;
   light: { label: "빛과 무늬", eyebrow: "LIGHT & PATTERN", lead: "별과 무늬. 흩뜨리면 제자리로, 건드리면 새 무늬로." },
   living: { label: "살아 있는 것", eyebrow: "LIVING THINGS", lead: "손끝을 피하고, 따라오고, 저희끼리 무리를 지어요." },
   things: { label: "만지는 물건", eyebrow: "THINGS TO TOUCH", lead: "공, 슬라임, 천, 블록. 손에 잡히는 감촉을 화면으로." },
-  keycap: { label: "키캡", eyebrow: "KEYCAPS", lead: "톡톡 누르는 키캡 키링. 파스텔, 투명, 피규어, 캐릭터 — 자판으로도 쳐요." },
+  keycap: { label: "키캡", eyebrow: "KEYCAPS", lead: "톡톡 누르는 키캡 키링. 축을 골라 소리를 바꾸고, 키캡을 하나씩 늘려요. 자판으로도 쳐요." },
   breath: { label: "숨", eyebrow: "BREATH", lead: "색 구름이 숨에 맞춰 퍼지고 모여요. 누르고 있는 동안 들이쉬어요." },
 };
 
@@ -57,6 +57,20 @@ export type Scene = {
   featured?: boolean;
   /** 장면 고유 조정 값 — 도구 패널에 −/+ 나 스위치로 뜬다 → lib/engines/types.ts */
   controls?: SceneControl[];
+};
+
+/**
+ * 키캡 장면 공통 — 축 고르기. 색은 스템 색(적·청·갈·흑, 무접점은 러버돔 보라). 소리는 lib/audio/tones.ts keySound
+ */
+const SWITCH_CONTROL: SceneControl = {
+  key: "switch", label: "축", kind: "choice", default: "red",
+  options: [
+    { value: "red", label: "적축", color: "#d9463f" },
+    { value: "blue", label: "청축", color: "#3b7bd6" },
+    { value: "brown", label: "갈축", color: "#8b5a3c" },
+    { value: "black", label: "흑축", color: "#2a2d31" },
+    { value: "topre", label: "무접점", color: "#8e6bd9" },
+  ],
 };
 
 /** 한 가지 색 장면에서 고를 수 있는 색. 짙은 바탕 위에서 잘 보이는 밝은 값들 */
@@ -197,34 +211,59 @@ export const SCENES: Scene[] = [
     thumb: `${glow(50, 50, "rgba(246,183,207,0.9)", 34)},${glow(70, 40, "rgba(185,215,242,0.8)", 30)},linear-gradient(170deg, #04161b, #0b262e)`,
   },
   {
-    slug: "keycap", title: "파스텔 키캡", subtitle: "흰 케이스에 파스텔 키캡. 사선에서 보면 눌리는 깊이가 보여요. 지우기로 색을 새로 섞어요.",
+    slug: "keycap", title: "파스텔 키캡", subtitle: "키캡 수를 늘리면 색이 랜덤인 키캡이 하나씩 붙어요. 축을 바꾸면 소리와 스템 색이 달라져요.",
     emoji: "⌨️", category: "keycap", engine: "keycap", color: { kind: "palette", colors: ["#f7c6d3", "#bfe0f7", "#d8ccf5"] }, idleDrift: false, tilt: false, sound: true,
     params: { style: "pastel" },
     controls: [
       { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 4 },
       { key: "led", label: "LED", kind: "switch", default: false },
+      SWITCH_CONTROL,
     ],
     thumb: `${glow(50, 55, "rgba(247,198,211,0.8)", 30)},${glow(30, 55, "rgba(191,224,247,0.7)", 26)},linear-gradient(170deg, #04161b, #10303a)`,
   },
   {
-    slug: "keycap-clear", title: "투명 키캡", subtitle: "투명 캡 아래 스위치가 보여요. LED 를 켜면 스위치가 색색으로 빛나요.",
+    slug: "keycap-emoji", title: "이모티콘 키캡", subtitle: "색 랜덤 키캡마다 이모티콘 하나. 늘릴수록 딸기·별·곰·클로버가 늘어요.",
+    emoji: "🍓", category: "keycap", engine: "keycap", color: { kind: "palette", colors: ["#f7c6d3", "#f9f1b5", "#c9ecd0"] }, idleDrift: false, tilt: false, sound: true,
+    params: { style: "emoji" },
+    controls: [
+      { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 4 },
+      { key: "led", label: "LED", kind: "switch", default: false },
+      SWITCH_CONTROL,
+    ],
+    thumb: `${glow(50, 55, "rgba(249,241,181,0.85)", 30)},${glow(30, 55, "rgba(247,198,211,0.7)", 26)},linear-gradient(170deg, #04161b, #10303a)`,
+  },
+  {
+    slug: "keycap-figure", title: "피규어 키캡", subtitle: "키캡 위에 3D 피규어가 얹혀 있어요. 곰·고양이·토끼·오리·하트·별. 누르면 함께 내려앉아요.",
+    emoji: "🧸", category: "keycap", engine: "keycap", color: { kind: "palette", colors: ["#c98b5a", "#e2637e", "#f7d64a"] }, idleDrift: false, tilt: false, sound: true,
+    params: { style: "figure" },
+    controls: [
+      { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 3 },
+      { key: "led", label: "LED", kind: "switch", default: false },
+      SWITCH_CONTROL,
+    ],
+    thumb: `${glow(50, 50, "rgba(201,139,90,0.75)", 28)},${glow(30, 55, "rgba(226,99,126,0.6)", 26)},linear-gradient(170deg, #04161b, #10303a)`,
+  },
+  {
+    slug: "keycap-clear", title: "투명 키캡", subtitle: "투명 캡 아래 스위치와 축 색 스템이 보여요. LED 를 켜면 스위치가 색색으로 빛나요.",
     emoji: "🔮", category: "keycap", engine: "keycap", color: { kind: "palette", colors: ["#5fb8c9", "#b9a6f0", "#f08ca4"] }, idleDrift: false, tilt: false, sound: true,
     params: { style: "clear" },
     controls: [
       { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 4 },
       { key: "led", label: "LED", kind: "switch", default: true },
+      SWITCH_CONTROL,
     ],
     thumb: `${glow(50, 55, "rgba(95,184,201,0.8)", 30)},${glow(70, 50, "rgba(185,166,240,0.7)", 26)},linear-gradient(170deg, #04161b, #10303a)`,
   },
   {
-    slug: "keycap-figure", title: "피규어 키캡", subtitle: "키캡 위에 하트·클로버·별·달 피규어. 누르면 피규어도 함께 내려앉아요.",
-    emoji: "💗", category: "keycap", engine: "keycap", color: { kind: "palette", colors: ["#e2637e", "#3f9e6b", "#e58d3b"] }, idleDrift: false, tilt: false, sound: true,
-    params: { style: "figure" },
+    slug: "keycap-pudding", title: "푸딩 키캡", subtitle: "윗면만 불투명, 옆은 우유빛 반투명. LED 가 옆으로 새어 나오는 요즘 인기 키캡이에요.",
+    emoji: "🍮", category: "keycap", engine: "keycap", color: { kind: "palette", colors: ["#f6f7fa", "#f7c6d3", "#bfe0f7"] }, idleDrift: false, tilt: false, sound: true,
+    params: { style: "pudding" },
     controls: [
-      { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 3 },
-      { key: "led", label: "LED", kind: "switch", default: false },
+      { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 4 },
+      { key: "led", label: "LED", kind: "switch", default: true },
+      SWITCH_CONTROL,
     ],
-    thumb: `${glow(50, 55, "rgba(226,99,126,0.7)", 30)},${glow(30, 50, "rgba(63,158,107,0.6)", 26)},linear-gradient(170deg, #04161b, #10303a)`,
+    thumb: `${glow(50, 55, "rgba(246,247,250,0.9)", 30)},${glow(50, 62, "rgba(95,184,201,0.7)", 34)},linear-gradient(170deg, #04161b, #10303a)`,
   },
   {
     slug: "keycap-print", title: "캐릭터 키캡", subtitle: "윗면에 그려진 얼굴·꽃·고양이·공룡·곰. 지우기마다 새 조합이에요.",
@@ -233,16 +272,29 @@ export const SCENES: Scene[] = [
     controls: [
       { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 4 },
       { key: "led", label: "LED", kind: "switch", default: false },
+      SWITCH_CONTROL,
     ],
     thumb: `${glow(50, 55, "rgba(251,251,246,0.8)", 28)},${glow(30, 50, "rgba(229,141,59,0.6)", 26)},linear-gradient(170deg, #04161b, #10303a)`,
   },
   {
-    slug: "keycap-mix", title: "랜덤 키캡 세트", subtitle: "하나면 보통 키캡, 둘 이상이면 파스텔·투명·피규어·캐릭터가 섞여 나와요.",
+    slug: "keycap-typewriter", title: "타자기 키캡", subtitle: "크롬 테를 두른 둥근 타자기 키캡. 검은 유리 위 글자가 하나씩. 레트로 느낌으로 톡톡.",
+    emoji: "🎹", category: "keycap", engine: "keycap", color: { kind: "palette", colors: ["#e9d6c3", "#cfeef0", "#fbfbfb"] }, idleDrift: false, tilt: false, sound: true,
+    params: { style: "typewriter" },
+    controls: [
+      { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 3 },
+      { key: "led", label: "LED", kind: "switch", default: false },
+      SWITCH_CONTROL,
+    ],
+    thumb: `${glow(50, 55, "rgba(233,214,195,0.8)", 28)},${glow(30, 50, "rgba(26,28,32,0.9)", 20)},linear-gradient(170deg, #04161b, #10303a)`,
+  },
+  {
+    slug: "keycap-mix", title: "랜덤 키캡 세트", subtitle: "하나면 보통 키캡, 늘릴수록 파스텔·이모티콘·피규어·투명·푸딩·캐릭터·타자기가 섞여 나와요.",
     emoji: "🎲", category: "keycap", engine: "keycap", color: { kind: "palette", colors: ["#f7c6d3", "#5fb8c9", "#e2637e", "#e58d3b"] }, idleDrift: false, tilt: false, sound: true,
     params: { style: "mix" },
     controls: [
       { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 6 },
       { key: "led", label: "LED", kind: "switch", default: true },
+      SWITCH_CONTROL,
     ],
     thumb: `${glow(40, 55, "rgba(247,198,211,0.8)", 26)},${glow(65, 50, "rgba(95,184,201,0.7)", 26)},linear-gradient(170deg, #04161b, #10303a)`,
   },

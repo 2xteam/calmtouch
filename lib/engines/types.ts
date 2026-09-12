@@ -30,7 +30,7 @@ export interface SceneEngine {
   /** 소리 켬/끔 (scene.sound 인 장면만) */
   setSound?(on: boolean): void;
   /** 장면 고유 조정 값(scene.controls)이 바뀌었다 — 키캡 수, LED 켬/끔 같은 것 */
-  setParam?(key: string, value: number | boolean): void;
+  setParam?(key: string, value: number | boolean | string): void;
 }
 
 /**
@@ -40,7 +40,9 @@ export interface SceneEngine {
  */
 export type SceneControl =
   | { key: string; label: string; kind: "stepper"; min: number; max: number; default: number }
-  | { key: string; label: string; kind: "switch"; default: boolean };
+  | { key: string; label: string; kind: "switch"; default: boolean }
+  /** 여럿 중 하나 — 축 종류처럼. color 가 있으면 칩 앞에 색 점이 붙는다 */
+  | { key: string; label: string; kind: "choice"; options: { value: string; label: string; color?: string }[]; default: string };
 
 export type EngineContext = {
   scene: Scene;

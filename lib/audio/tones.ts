@@ -70,6 +70,75 @@ export function thud(pitch = 180, vel = 0.5) {
 }
 
 /**
+ * 기계식 스위치(축) 소리 — 축마다 성격이 다르다 (2026-09-12 사용자: "축마다 특성이 있는 소리, 아주 중요").
+ *
+ *   적축  선형(45g) — 걸림 없이 내려가 바닥에 "탁". 클릭 없음. 맑고 가벼운 바닥 소리
+ *   흑축  선형(60g) — 적축보다 무겁고 낮은 "턱". 바닥 소리가 굵다
+ *   갈축  택타일(45g) — 중간에 작은 걸림(범프) 잡음이 먼저 살짝, 바닥은 조금 먹먹한 "톡"
+ *   청축  클리키(50g) — 클릭 재킷이 튀며 높고 날카로운 "칙" 이 먼저, 바닥 "탁". 손을 떼면 또 한 번 작은 클릭
+ *   무접점 정전용량(45g, 러버돔) — 깊고 둥근 "토크"(코토코토). 낮은 몸통이 조금 길고, 돔이 "폭" 하는 중저역 잡음.
+ *          손을 떼면 돔이 돌아오는 부드러운 "톡"
+ *
+ * 소리는 세 조각으로 만든다: 바닥 몸통(사인, 음높이가 빠르게 떨어진다) · 잡음 조각(밴드패스) · 클릭 핑(높은 사인, 아주 짧게).
+ * pitch 는 키마다 조금 다르게 (0.9~1.1)
+ */
+export type SwitchKind = "red" | "blue" | "brown" | "black" | "topre";
+
+type Piece = { body: [number, number, number, number]; noise: [number, number, number, number]; click?: [number, number, number]; bump?: number };
+// body: [시작 Hz, 끝 Hz, 길이 s, 세기] · noise: [중심 Hz, Q, 길이 s, 세기] · click: [Hz, 길이 s, 세기] · bump: 범프 잡음 세기
+const DOWN: Record<SwitchKind, Piece> = {
+  red: { body: [300, 140, 0.075, 0.42], noise: [2000, 0.9, 0.028, 0.42] },
+  black: { body: [230, 105, 0.095, 0.55], noise: [1400, 0.9, 0.032, 0.4] },
+  brown: { body: [280, 130, 0.08, 0.38], noise: [1500, 1.2, 0.03, 0.3], bump: 0.16 },
+  blue: { body: [320, 150, 0.07, 0.36], noise: [2600, 0.8, 0.024, 0.34], click: [4300, 0.022, 0.55] },
+  topre: { body: [190, 88, 0.14, 0.62], noise: [650, 1.4, 0.04, 0.5] },
+};
+const UP: Record<SwitchKind, Piece> = {
+  red: { body: [520, 380, 0.03, 0.08], noise: [2600, 1, 0.016, 0.16] },
+  black: { body: [480, 340, 0.03, 0.09], noise: [2200, 1, 0.016, 0.16] },
+  brown: { body: [520, 380, 0.03, 0.08], noise: [2400, 1, 0.018, 0.18] },
+  blue: { body: [560, 400, 0.03, 0.08], noise: [3000, 0.9, 0.016, 0.2], click: [3600, 0.016, 0.3] },
+  topre: { body: [260, 150, 0.06, 0.2], noise: [900, 1.4, 0.025, 0.22] },
+};
+
+export function keySound(kind: SwitchKind, phase: "down" | "up", pitch = 1) {
+  const c = ensureAudio();
+  if (!c || !master) return;
+  const now = c.currentTime;
+  const p = (phase === "down" ? DOWN : UP)[kind];
+  let t0 = now;
+  // 범프 — 바닥 닿기 직전 아주 작은 걸림 잡음 (갈축)
+  if (p.bump) { noiseBurst(c, now, 1100 * pitch, 1.5, 0.014, p.bump); t0 = now + 0.02; }
+  // 클릭 — 바닥보다 먼저 (청축)
+  if (p.click) {
+    const [f, len, vel] = p.click;
+    const osc = c.createOscillator(); osc.type = "triangle"; osc.frequency.value = f * pitch;
+    const g = c.createGain(); g.gain.setValueAtTime(vel, now); g.gain.exponentialRampToValueAtTime(0.0001, now + len);
+    osc.connect(g).connect(master); osc.start(now); osc.stop(now + len + 0.01);
+    noiseBurst(c, now, 5200 * pitch, 0.7, 0.008, vel * 0.7);
+    t0 = now + 0.012;
+  }
+  const [f0, f1, blen, bvel] = p.body;
+  const osc = c.createOscillator(); osc.type = "sine";
+  osc.frequency.setValueAtTime(f0 * pitch, t0); osc.frequency.exponentialRampToValueAtTime(f1 * pitch, t0 + blen * 0.6);
+  const g = c.createGain(); g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(bvel, t0 + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, t0 + blen);
+  osc.connect(g).connect(master); osc.start(t0); osc.stop(t0 + blen + 0.02);
+  const [nf, nq, nlen, nvel] = p.noise;
+  noiseBurst(c, t0, nf * pitch, nq, nlen, nvel);
+}
+function noiseBurst(c: AudioContext, at: number, freq: number, q: number, len: number, vel: number) {
+  if (!master) return;
+  const n = Math.max(8, Math.floor(c.sampleRate * len));
+  const buf = c.createBuffer(1, n, c.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n) ** 2;
+  const src = c.createBufferSource(); src.buffer = buf;
+  const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = freq; bp.Q.value = q;
+  const g = c.createGain(); g.gain.setValueAtTime(vel, at); g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+  src.connect(bp).connect(g).connect(master); src.start(at); src.stop(at + len + 0.01);
+}
+
+/**
  * 톡 — 기계식 키캡이 바닥에 닿는 소리. 짧은 잡음 "틱" + 낮은 몸통 울림 "톡". 키캡 장면.
  *   pitch 0.8~1.2 배율 — 키마다 조금씩 다르게
  */
