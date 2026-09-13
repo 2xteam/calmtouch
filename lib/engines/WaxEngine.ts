@@ -1,12 +1,13 @@
 import { createCanvas2D, createLoop, DEEP_BG } from "@/lib/canvas/tools";
 import { crackle } from "@/lib/audio/tones";
-import { clamp, lerp, rand, TAU } from "@/lib/util/math";
+import { clamp, damp, lerp, rand, TAU } from "@/lib/util/math";
 import type { EngineFactory } from "./types";
 
 /**
  * 왁뿌 — 파스텔 왁스를 입힌 도넛 모양 점토 (참고: 팔레트슬라임 "왕도넛 왁뿌", 2026-09-11 사용자 사진).
  *
- *   · 몸은 바깥 고리 96점의 점토 — 손 근처만, 손이 닿아 있을 때만 움직이고 떼면 굳는다
+ *   · 몸은 바깥 고리 96점의 **말랑이** (2026-09-13 정정: 점토 → 말랑이). 손 근처만 움직이고, 손을 떼면 슬로우 라이징으로
+ *     제 모양(원)으로 천천히 부풀어 돌아온다. 자국도 천천히 사라진다. 뚫린 구멍은 문질러 메운다
  *   · 속살 색은 도넛 경계 상자 (u,v) 의 **clay 캔버스**다. 가운데 구멍도 그 캔버스의 빈자리일 뿐이라
  *     문지르면 색이 서로 끌려 섞이고 구멍도 메워진다 (2026-09-11 정정: 구멍·색을 억지로 지키지 않는다)
  *   · 껍질(wax 캔버스): 분홍·하늘·노랑 세 구역 + 별 스프링클. 꾹 누르면 **조각조각** 갈라져 가운데 조각은
@@ -32,6 +33,8 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
 
   const N = 96;
   let outer: Node[] = [];
+  /** 제 모양 — 말랑이가 돌아갈 자리 */
+  let rest: { x: number; y: number }[] = [];
   let R = 100, hole = 34;
   let restArea = 0;
   const dents: Dent[] = [];
@@ -125,6 +128,7 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
     const { x: cx, y: cy } = center();
     outer = [];
     for (let i = 0; i < N; i++) { const a = (i / N) * TAU; outer.push({ x: cx + Math.cos(a) * R, y: cy + Math.sin(a) * R, vx: 0, vy: 0 }); }
+    rest = outer.map((n) => ({ x: n.x, y: n.y }));
     restArea = area(outer);
     dents.length = 0;
     body.width = Math.max(1, Math.floor(c.w * c.dpr)); body.height = Math.max(1, Math.floor(c.h * c.dpr));
@@ -341,10 +345,11 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
     for (const [id, f] of fingers) if (id === 0 && !f.pressed && now - f.at > 600) fingers.delete(id);
 
     bbox();
-    // 자국 — 다 잠긴 뒤에도 누르고 있으면 바닥에 닿아 뚫린다 (점토라 뚫린 채 남는다)
-    for (const d of dents) {
-      if (!d.held) continue;
-      d.depth = Math.min(1, d.depth + dt / 0.35);
+    // 자국 — 다 잠긴 뒤에도 누르고 있으면 바닥에 닿아 뚫린다. 손을 떼면 말랑이라 천천히 부풀어 사라진다
+    for (let i = dents.length - 1; i >= 0; i--) {
+      const d = dents[i];
+      if (!d.held) { d.depth -= (dt / 2.4) * (0.35 + (1 - d.depth) * 1.3); if (d.depth <= 0) dents.splice(i, 1); continue; }
+      d.depth = Math.min(1, d.depth + dt / 0.3);
       if (d.depth >= 1) d.through = Math.min(1, d.through + dt / 0.8);
       const [u, v] = toUV(d.x, d.y);
       if (d.through > 0.5 && d.punched < 1) { d.punched = 1; punch(u, v, (FINGER_R * 0.45) / bw, false); }
@@ -364,10 +369,13 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
       if (d > 0.95 && sh.stage < 3) { sh.stage = 3; for (const cell of sh.cells) if (cell.state === "off" && cell.d >= 0.5) detach(cell); if (sound) crackle(1); }
     }
 
-    // 점토 — 손이 닿아 있을 때, 손 근처만
+    // 말랑이 — 손이 닿아 있을 때는 손 근처만 움직이고, 떼면 제 모양으로 천천히 부풀어 돌아온다 (슬로우 라이징)
     const touching = [...fingers.values()].some((f) => f.pressed);
-    if (!touching) { for (const n of outer) { n.vx = 0; n.vy = 0; } }
-    else {
+    if (!touching) {
+      const k = 1 - damp(1.6, dt);
+      for (let i = 0; i < N; i++) { const n = outer[i], r0 = rest[i]; if (!r0) continue; n.vx = 0; n.vy = 0; n.x += (r0.x - n.x) * k; n.y += (r0.y - n.y) * k; }
+      bbox();
+    } else {
       for (let s = 0; s < sub; s++) {
         const A = area(outer);
         const pressureK = clamp((restArea - A) / restArea, -0.6, 0.6) * 1200;

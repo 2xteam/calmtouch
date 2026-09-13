@@ -20,7 +20,7 @@ export const CATEGORIES: Record<SceneCategory, { label: string; eyebrow: string;
   surface: { label: "물과 유리", eyebrow: "WATER & GLASS", lead: "수면과 유리창. 만진 자리가 잠깐 바뀌고 다시 돌아와요." },
   light: { label: "빛과 무늬", eyebrow: "LIGHT & PATTERN", lead: "별과 무늬. 흩뜨리면 제자리로, 건드리면 새 무늬로." },
   living: { label: "살아 있는 것", eyebrow: "LIVING THINGS", lead: "손끝을 피하고, 따라오고, 저희끼리 무리를 지어요." },
-  things: { label: "만지는 물건", eyebrow: "THINGS TO TOUCH", lead: "공, 슬라임, 천, 블록. 손에 잡히는 감촉을 화면으로." },
+  things: { label: "만지는 물건", eyebrow: "THINGS TO TOUCH", lead: "공, 슬라임, 말랑이, 천, 블록. 손에 잡히는 감촉을 화면으로." },
   keycap: { label: "키캡", eyebrow: "KEYCAPS", lead: "톡톡 누르는 키캡 키링. 축을 골라 소리를 바꾸고, 키캡을 하나씩 늘려요. 자판으로도 쳐요." },
   breath: { label: "숨", eyebrow: "BREATH", lead: "색 구름이 숨에 맞춰 퍼지고 모여요. 누르고 있는 동안 들이쉬어요." },
 };
@@ -62,6 +62,9 @@ export type Scene = {
 /**
  * 키캡 장면 공통 — 축 고르기. 색은 스템 색(적·청·갈·흑, 무접점은 러버돔 보라). 소리는 lib/audio/tones.ts keySound
  */
+/** 누를 때 짧게 떨림 — navigator.vibrate 가 있는 기기(안드로이드)에서만 스위치가 보인다. iOS Safari 는 API 가 없다 */
+const HAPTIC_CONTROL: SceneControl = { key: "haptic", label: "진동", kind: "switch", default: true, requires: "vibrate" };
+
 const SWITCH_CONTROL: SceneControl = {
   key: "switch", label: "축", kind: "choice", default: "red",
   options: [
@@ -206,7 +209,13 @@ export const SCENES: Scene[] = [
     thumb: `${glow(50, 55, "rgba(127,216,176,0.95)", 32)},linear-gradient(170deg, #04161b, #0b262e)`,
   },
   {
-    slug: "wax", title: "왁뿌", subtitle: "파스텔 왁스를 입힌 도넛. 꾹 누르면 껍질이 조각조각 갈라지고, 문지르면 속 점토와 섞여요.",
+    slug: "squishy", title: "말랑이", subtitle: "꾹 누르면 깊게 들어가고, 손을 떼면 천천히 부풀어 돌아와요. 슬라임과 달리 흐르지 않아요.",
+    emoji: "🍑", category: "things", engine: "slime", color: { kind: "single", defaultColor: "#f6b7cf", presets: SINGLE_PRESETS }, idleDrift: false, tilt: true,
+    params: { squishy: true },
+    thumb: `${glow(50, 52, "rgba(246,183,207,0.95)", 34)},linear-gradient(170deg, #04161b, #0b262e)`,
+  },
+  {
+    slug: "wax", title: "왁뿌", subtitle: "파스텔 왁스를 입힌 말랑이 도넛. 꾹 누르면 껍질이 조각조각 갈라지고, 속살은 천천히 부풀어 돌아와요.",
     emoji: "🍩", category: "things", engine: "wax", color: { kind: "palette", colors: ["#f6b7cf", "#b9d7f2", "#f7ecb0"] }, idleDrift: false, tilt: true, sound: true,
     thumb: `${glow(50, 50, "rgba(246,183,207,0.9)", 34)},${glow(70, 40, "rgba(185,215,242,0.8)", 30)},linear-gradient(170deg, #04161b, #0b262e)`,
   },
@@ -217,6 +226,7 @@ export const SCENES: Scene[] = [
     controls: [
       { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 4 },
       { key: "led", label: "LED", kind: "switch", default: false },
+      HAPTIC_CONTROL,
       SWITCH_CONTROL,
     ],
     thumb: `${glow(50, 55, "rgba(247,198,211,0.8)", 30)},${glow(30, 55, "rgba(191,224,247,0.7)", 26)},linear-gradient(170deg, #04161b, #10303a)`,
@@ -228,6 +238,7 @@ export const SCENES: Scene[] = [
     controls: [
       { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 4 },
       { key: "led", label: "LED", kind: "switch", default: false },
+      HAPTIC_CONTROL,
       SWITCH_CONTROL,
     ],
     thumb: `${glow(50, 55, "rgba(249,241,181,0.85)", 30)},${glow(30, 55, "rgba(247,198,211,0.7)", 26)},linear-gradient(170deg, #04161b, #10303a)`,
@@ -239,6 +250,7 @@ export const SCENES: Scene[] = [
     controls: [
       { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 3 },
       { key: "led", label: "LED", kind: "switch", default: false },
+      HAPTIC_CONTROL,
       SWITCH_CONTROL,
     ],
     thumb: `${glow(50, 50, "rgba(201,139,90,0.75)", 28)},${glow(30, 55, "rgba(226,99,126,0.6)", 26)},linear-gradient(170deg, #04161b, #10303a)`,
@@ -250,6 +262,7 @@ export const SCENES: Scene[] = [
     controls: [
       { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 4 },
       { key: "led", label: "LED", kind: "switch", default: true },
+      HAPTIC_CONTROL,
       SWITCH_CONTROL,
     ],
     thumb: `${glow(50, 55, "rgba(95,184,201,0.8)", 30)},${glow(70, 50, "rgba(185,166,240,0.7)", 26)},linear-gradient(170deg, #04161b, #10303a)`,
@@ -261,6 +274,7 @@ export const SCENES: Scene[] = [
     controls: [
       { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 4 },
       { key: "led", label: "LED", kind: "switch", default: true },
+      HAPTIC_CONTROL,
       SWITCH_CONTROL,
     ],
     thumb: `${glow(50, 55, "rgba(246,247,250,0.9)", 30)},${glow(50, 62, "rgba(95,184,201,0.7)", 34)},linear-gradient(170deg, #04161b, #10303a)`,
@@ -272,6 +286,7 @@ export const SCENES: Scene[] = [
     controls: [
       { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 4 },
       { key: "led", label: "LED", kind: "switch", default: false },
+      HAPTIC_CONTROL,
       SWITCH_CONTROL,
     ],
     thumb: `${glow(50, 55, "rgba(251,251,246,0.8)", 28)},${glow(30, 50, "rgba(229,141,59,0.6)", 26)},linear-gradient(170deg, #04161b, #10303a)`,
@@ -283,6 +298,7 @@ export const SCENES: Scene[] = [
     controls: [
       { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 3 },
       { key: "led", label: "LED", kind: "switch", default: false },
+      HAPTIC_CONTROL,
       SWITCH_CONTROL,
     ],
     thumb: `${glow(50, 55, "rgba(233,214,195,0.8)", 28)},${glow(30, 50, "rgba(26,28,32,0.9)", 20)},linear-gradient(170deg, #04161b, #10303a)`,
@@ -294,6 +310,7 @@ export const SCENES: Scene[] = [
     controls: [
       { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 6 },
       { key: "led", label: "LED", kind: "switch", default: true },
+      HAPTIC_CONTROL,
       SWITCH_CONTROL,
     ],
     thumb: `${glow(40, 55, "rgba(247,198,211,0.8)", 26)},${glow(65, 50, "rgba(95,184,201,0.7)", 26)},linear-gradient(170deg, #04161b, #10303a)`,

@@ -34,6 +34,12 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
   let hex = ctx0.color;
   const wax = ctx0.scene.params?.wax === true;
   const clay = ctx0.scene.params?.clay === true;
+  /**
+   * 말랑이(`params.squishy`) — 슬라임과 질감이 전혀 다르다 (2026-09-13 사용자).
+   * 슬라임은 점성 액체: 흐르고 늘어나고 붙고 비친다. 말랑이는 **탄성 있는 무광 폼**: 눌리면 깊게 들어가되 흐르지 않고,
+   * 떼면 슬로우 라이징으로 천천히 부풀어 제 모양으로 돌아온다. 손에 붙지 않고, 기포·광택·투명감이 없다.
+   */
+  const squishy = ctx0.scene.params?.squishy === true;
   let sound = ctx0.sound;
 
   const N = 96;
@@ -106,7 +112,7 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
     restArea = area();
     restPerimeter = TAU * radius;
     bubbles.length = 0;
-    const nb = clay ? 0 : 34;
+    const nb = clay || squishy ? 0 : 34;
     for (let i = 0; i < nb; i++) {
       const a = rand(0, TAU), rr = Math.sqrt(Math.random()) * 0.8;
       bubbles.push({ u: 0.5 + Math.cos(a) * rr * 0.5, v: 0.5 + Math.sin(a) * rr * 0.5, r: rand(2, 8), drift: rand(0, TAU) });
@@ -306,11 +312,13 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
     for (let i = dents.length - 1; i >= 0; i--) {
       const d = dents[i];
       if (d.held) {
-        d.depth = Math.min(1, d.depth + dt / 0.35);
-        // 다 잠긴 뒤에도 누르고 있으면 바닥에 닿아 구멍이 난다
-        if (d.depth >= 1) d.through = Math.min(1, d.through + dt / 0.55);
+        d.depth = Math.min(1, d.depth + dt / (squishy ? 0.25 : 0.35));
+        // 다 잠긴 뒤에도 누르고 있으면 바닥에 닿아 구멍이 난다 (말랑이는 폼이라 뚫리지 않는다)
+        if (d.depth >= 1 && !squishy) d.through = Math.min(1, d.through + dt / 0.55);
       } else if (!clay) {
-        d.depth -= dt / 2.5; d.through = Math.max(0, d.through - dt / 1.6);
+        // 슬라임은 흘러 메워지고, 말랑이는 슬로우 라이징 — 처음엔 천천히, 끝엔 빨리 부푼다
+        d.depth -= squishy ? (dt / 2.4) * (0.35 + (1 - d.depth) * 1.3) : dt / 2.5;
+        d.through = Math.max(0, d.through - dt / 1.6);
         if (d.depth <= 0 && d.through <= 0) { dents.splice(i, 1); continue; }
       }
     }
@@ -347,15 +355,15 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
       for (const n of nodes) { cx += n.x; cy += n.y; }
       cx /= N; cy /= N;
       const A = area();
-      const pressureK = clamp((restArea - A) / restArea, -0.6, 0.6) * (clay ? 3000 : 9000);
+      const pressureK = clamp((restArea - A) / restArea, -0.6, 0.6) * (clay ? 3000 : squishy ? 16000 : 9000);
       const restLen = restPerimeter / N;
-      const wobbleAmp = clay ? 0 : wax ? 0.025 : 0.04;
+      const wobbleAmp = clay || squishy ? 0 : wax ? 0.025 : 0.04;
 
       for (let i = 0; i < N; i++) {
         const n = nodes[i];
         const l = nodes[(i + N - 1) % N], r = nodes[(i + 1) % N];
         let ax = 0, ay = 0;
-        const springK = clay ? 6 : 18, bendK = clay ? 14 : 70;
+        const springK = clay ? 6 : squishy ? 40 : 18, bendK = clay ? 14 : squishy ? 120 : 70;
         for (const o of [l, r]) {
           const dx = o.x - n.x, dy = o.y - n.y;
           const d = Math.hypot(dx, dy) || 0.001;
@@ -374,13 +382,16 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
           const wobble = 1 + noise2(Math.cos(ang) * 1.3 + t * 0.35, Math.sin(ang) * 1.3 - t * 0.27) * wobbleAmp;
           const tx = restX + Math.cos(ang) * radius * wobble;
           const ty = restY + Math.sin(ang) * radius * wobble;
-          n.vx += (tx - n.x) * 0.7 * hs; n.vy += (ty - n.y) * 0.7 * hs;
+          // 말랑이는 모양 기억이 세다 — 눌린 자리만 들어가고 나머지는 제자리 (너무 세면 눌러도 윤곽이 안 변한다)
+          const memory = squishy ? 3 : 0.7;
+          n.vx += (tx - n.x) * memory * hs; n.vy += (ty - n.y) * memory * hs;
         }
         for (const d of dents) {
           const dx = n.x - d.x, dy = n.y - d.y;
           const dist = Math.hypot(dx, dy) || 0.001;
-          const w = Math.exp(-((dist / (radius * 0.55)) ** 2));
-          ax += (dx / dist) * d.depth * 2600 * w; ay += (dy / dist) * d.depth * 2600 * w;
+          const w = Math.exp(-((dist / (radius * (squishy ? 0.4 : 0.55))) ** 2));
+          const push = squishy ? 3400 : 2600;
+          ax += (dx / dist) * d.depth * push * w; ay += (dy / dist) * d.depth * push * w;
         }
         n.vx += ax * hs; n.vy += ay * hs;
       }
@@ -392,8 +403,8 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
           const d = Math.hypot(dx, dy) || 0.001;
           if (d > reach) continue;
           const w = 1 - d / reach;
-          if (f.pressed) { const k = w * w * 0.85; n.vx = lerp(n.vx, f.vx, k); n.vy = lerp(n.vy, f.vy, k); }
-          else { n.vx += f.vx * w * 0.15; n.vy += f.vy * w * 0.15; }
+          if (f.pressed) { const k = w * w * (squishy ? 0.3 : 0.85); n.vx = lerp(n.vx, f.vx, k); n.vy = lerp(n.vy, f.vy, k); } // 말랑이는 손에 붙지 않는다
+          else if (!squishy) { n.vx += f.vx * w * 0.15; n.vy += f.vy * w * 0.15; }
           if (d < FINGER_R) { const push = FINGER_R - d; n.x += (dx / d) * push; n.y += (dy / d) * push; n.vx *= 0.5; n.vy *= 0.5; }
         }
       }
@@ -419,7 +430,7 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
         const l = nodes[(i + N - 1) % N], r = nodes[(i + 1) % N], n = nodes[i];
         vxs[i] = n.vx * 0.2 + (l.vx + r.vx) * 0.4; vys[i] = n.vy * 0.2 + (l.vy + r.vy) * 0.4;
       }
-      const dampK = Math.exp(-(clay ? 26 : 10) * hs); // 슬라임 점도 ↑ (2026-09-11 사용자: 너무 흐느적)
+      const dampK = Math.exp(-(clay ? 26 : squishy ? 7 : 10) * hs); // 슬라임 점도 ↑ (2026-09-11 사용자: 너무 흐느적) · 말랑이는 조금 튄다
       for (let i = 0; i < N; i++) {
         const n = nodes[i];
         n.vx = vxs[i] * dampK; n.vy = vys[i] * dampK;
@@ -488,15 +499,15 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
     bctx.drawImage(tint, minX, minY, bw, bh);
     bctx.restore();
     const lightG = bctx.createRadialGradient(midX - bw * 0.08, midY - bh * 0.1, big * 0.05, midX, midY, big * 0.58);
-    if (clay) {
-      lightG.addColorStop(0, "rgba(255,255,255,0.14)"); lightG.addColorStop(0.7, "rgba(255,255,255,0)"); lightG.addColorStop(1, "rgba(0,10,14,0.38)");
+    if (clay || squishy) {
+      lightG.addColorStop(0, `rgba(255,255,255,${squishy ? 0.1 : 0.14})`); lightG.addColorStop(0.7, "rgba(255,255,255,0)"); lightG.addColorStop(1, `rgba(0,10,14,${squishy ? 0.3 : 0.38})`);
     } else {
       lightG.addColorStop(0, "rgba(255,255,255,0.2)"); lightG.addColorStop(0.55, "rgba(255,255,255,0)");
       lightG.addColorStop(0.86, "rgba(0,14,18,0.2)"); lightG.addColorStop(1, "rgba(0,14,18,0.5)");
     }
     bctx.globalCompositeOperation = "source-atop";
     bctx.fillStyle = lightG; bctx.fillRect(minX - 2, minY - 2, bw + 4, bh + 4);
-    if (!clay) {
+    if (!clay && !squishy) {
       const alphaG = bctx.createRadialGradient(midX - bw * 0.08, midY - bh * 0.1, big * 0.05, midX, midY, big * 0.58);
       alphaG.addColorStop(0, "rgba(0,0,0,0.98)"); alphaG.addColorStop(0.55, "rgba(0,0,0,0.94)");
       alphaG.addColorStop(0.86, "rgba(0,0,0,0.86)"); alphaG.addColorStop(1, "rgba(0,0,0,0.72)");
@@ -515,8 +526,8 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
     const layers = 22;
     for (let k = 0; k < layers; k++) {
       const f = k / (layers - 1);
-      ctx.lineWidth = big * (clay ? 0.09 : 0.14) * (1 - f) + 2;
-      ctx.strokeStyle = `rgba(${R * 0.3 | 0},${G * 0.35 | 0},${B * 0.35 | 0},${(((clay ? 0.05 : 0.075) + f * 0.03) * 7) / layers})`;
+      ctx.lineWidth = big * (clay || squishy ? 0.09 : 0.14) * (1 - f) + 2;
+      ctx.strokeStyle = `rgba(${R * 0.3 | 0},${G * 0.35 | 0},${B * 0.35 | 0},${(((clay || squishy ? 0.05 : 0.075) + f * 0.03) * 7) / layers})`;
       ctx.stroke();
     }
     // 기포 (슬라임만) — 눌린 자리에서 밀려난다
@@ -542,8 +553,8 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
     }
     // 넓고 부드러운 광택 — 왼쫌 위 (점토는 무광에 가깝게)
     const hl = ctx.createRadialGradient(minX + bw * 0.34, minY + bh * 0.28, 0, minX + bw * 0.36, minY + bh * 0.32, big * 0.34);
-    hl.addColorStop(0, `rgba(255,255,255,${clay ? 0.16 : 0.5})`);
-    hl.addColorStop(0.55, `rgba(255,255,255,${clay ? 0.05 : 0.1})`);
+    hl.addColorStop(0, `rgba(255,255,255,${clay || squishy ? 0.16 : 0.5})`);
+    hl.addColorStop(0.55, `rgba(255,255,255,${clay || squishy ? 0.05 : 0.1})`);
     hl.addColorStop(1, "rgba(255,255,255,0)");
     ctx.fillStyle = hl;
     ctx.fillRect(minX, minY, bw, bh);
@@ -557,28 +568,31 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
     for (const d of dents) {
       const rr = FINGER_R * (1 + d.depth * 0.6);
       const k = d.depth;
-      const dark = wax ? 0.22 : 0.3;
+      const dark = wax ? 0.22 : squishy ? 0.5 : 0.3;
+      // 말랑이의 그늘은 **몸 색을 어둡게 한 색**이다 — 검정을 얹으면 파스텔이 잿빛이 된다(2026-09-13)
+      const shadow = squishy ? `${(R * 0.5) | 0}, ${(G * 0.36) | 0}, ${(B * 0.42) | 0}` : "0, 12, 16";
       const g1 = ctx.createRadialGradient(d.x, d.y, 0, d.x, d.y, rr * 1.7);
-      g1.addColorStop(0, `rgba(0, 12, 16, ${dark * k})`);
-      g1.addColorStop(0.35, `rgba(0, 12, 16, ${dark * 0.55 * k})`);
-      g1.addColorStop(0.62, "rgba(0, 12, 16, 0)");
-      g1.addColorStop(1, "rgba(0, 12, 16, 0)");
+      g1.addColorStop(0, `rgba(${shadow}, ${dark * k})`);
+      g1.addColorStop(0.35, `rgba(${shadow}, ${dark * 0.55 * k})`);
+      g1.addColorStop(0.62, `rgba(${shadow}, 0)`);
+      g1.addColorStop(1, `rgba(${shadow}, 0)`);
       ctx.fillStyle = g1;
       ctx.fillRect(d.x - rr * 2, d.y - rr * 2, rr * 4, rr * 4);
       const g2 = ctx.createRadialGradient(d.x - rr * 0.35, d.y - rr * 0.35, rr * 0.2, d.x - rr * 0.2, d.y - rr * 0.2, rr * 1.1);
-      g2.addColorStop(0, `rgba(0, 12, 16, ${0.28 * k})`);
-      g2.addColorStop(1, "rgba(0, 12, 16, 0)");
+      g2.addColorStop(0, `rgba(${shadow}, ${(squishy ? 0.34 : 0.28) * k})`);
+      g2.addColorStop(1, `rgba(${shadow}, 0)`);
       ctx.fillStyle = g2;
       ctx.fillRect(d.x - rr * 2, d.y - rr * 2, rr * 4, rr * 4);
       const g3 = ctx.createRadialGradient(d.x + rr * 0.45, d.y + rr * 0.45, rr * 0.15, d.x + rr * 0.25, d.y + rr * 0.25, rr * 1.15);
-      g3.addColorStop(0, `rgba(255, 255, 255, ${(clay ? 0.18 : 0.32) * k})`);
-      g3.addColorStop(0.6, `rgba(255, 255, 255, ${(clay ? 0.06 : 0.1) * k})`);
+      g3.addColorStop(0, `rgba(255, 255, 255, ${(clay || squishy ? 0.18 : 0.32) * k})`);
+      g3.addColorStop(0.6, `rgba(255, 255, 255, ${(clay || squishy ? 0.06 : 0.1) * k})`);
       g3.addColorStop(1, "rgba(255, 255, 255, 0)");
       ctx.fillStyle = g3;
       ctx.fillRect(d.x - rr * 2, d.y - rr * 2, rr * 4, rr * 4);
       const ring = ctx.createRadialGradient(d.x, d.y, rr * 0.95, d.x, d.y, rr * 1.75);
-      ring.addColorStop(0, `rgba(255,255,255,${(clay ? 0.08 : 0.18) * k})`);
-      ring.addColorStop(0.4, `rgba(255,255,255,${(clay ? 0.03 : 0.06) * k})`);
+      // 눌린 자리 둘레는 밀려난 폼이 도톰하게 솟는다 — 말랑이는 이 테가 뚜렷하다
+      ring.addColorStop(0, `rgba(255,255,255,${(squishy ? 0.3 : clay ? 0.08 : 0.18) * k})`);
+      ring.addColorStop(0.4, `rgba(255,255,255,${(squishy ? 0.11 : clay ? 0.03 : 0.06) * k})`);
       ring.addColorStop(1, "rgba(255,255,255,0)");
       ctx.fillStyle = ring;
       ctx.fillRect(d.x - rr * 2, d.y - rr * 2, rr * 4, rr * 4);
@@ -618,9 +632,9 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
     }
 
     tracePath();
-    ctx.lineWidth = clay ? 1.5 : 2;
+    ctx.lineWidth = clay || squishy ? 1.5 : 2;
     const rim = ctx.createLinearGradient(minX, minY, maxX, maxY);
-    rim.addColorStop(0, `rgba(255,255,255,${clay ? 0.35 : 0.65})`);
+    rim.addColorStop(0, `rgba(255,255,255,${clay || squishy ? 0.3 : 0.65})`);
     rim.addColorStop(0.5, "rgba(255,255,255,0.08)");
     rim.addColorStop(1, `rgba(${R * 0.3 | 0},${G * 0.3 | 0},${B * 0.3 | 0},0.7)`);
     ctx.strokeStyle = rim;

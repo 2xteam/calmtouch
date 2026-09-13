@@ -40,7 +40,8 @@ export interface SceneEngine {
  */
 export type SceneControl =
   | { key: string; label: string; kind: "stepper"; min: number; max: number; default: number }
-  | { key: string; label: string; kind: "switch"; default: boolean }
+  /** requires: 이 기능이 있는 기기에서만 보인다 — "vibrate" 는 navigator.vibrate (안드로이드 브라우저 · iOS Safari 는 없다) */
+  | { key: string; label: string; kind: "switch"; default: boolean; requires?: "vibrate" }
   /** 여럿 중 하나 — 축 종류처럼. color 가 있으면 칩 앞에 색 점이 붙는다 */
   | { key: string; label: string; kind: "choice"; options: { value: string; label: string; color?: string }[]; default: string };
 

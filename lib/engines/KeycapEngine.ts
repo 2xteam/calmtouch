@@ -20,7 +20,7 @@ type Style = "pastel" | "emoji" | "figure" | "clear" | "pudding" | "print" | "ty
 type Fig = "bear" | "cat" | "rabbit" | "duck" | "heart" | "star" | "clover" | "flower";
 type Icon = "face" | "flower" | "cat" | "dino" | "bear";
 type Look = { style: Style; color: string; emoji: string; fig: Fig; figColor: string; icon: Icon; ink: string; letter: string };
-type Key = { gx: number; gy: number; press: number; target: number; hit: number; flash: number; look: Look };
+type Key = { gx: number; gy: number; press: number; target: number; hit: number; flash: number; look: Look; wobble: number; wobPhase: number; drips: number[] };
 type Wave = { at: number; idx: number; amt: number };
 type Confetti = { x: number; y: number; vx: number; vy: number; rot: number; vr: number; size: number; life: number; color: string; star: boolean };
 
@@ -48,9 +48,12 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
   let count = 4;
   let led = true;
   let sw: SwitchKind = "red";
+  let haptic = true;
+  const canVibrate = typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
   for (const ctl of ctx0.scene.controls ?? []) {
     if (ctl.key === "count" && ctl.kind === "stepper") count = ctl.default;
     if (ctl.key === "led" && ctl.kind === "switch") led = ctl.default;
+    if (ctl.key === "haptic" && ctl.kind === "switch") haptic = ctl.default;
     if (ctl.key === "switch" && ctl.kind === "choice") sw = ctl.default as SwitchKind;
   }
   let keys: Key[] = [];
@@ -64,9 +67,9 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
   let bounce = 0, levelPop = 0, ringLife = 0, ringLevel = 1;
   const confetti: Confetti[] = [];
   const digitsOf = (n: number) => Math.max(1, String(Math.max(0, n)).length);
-  const celebrate = (level: number, x: number, y: number) => {
-    levelPop = 1; ringLife = 1; ringLevel = level;
-    const n = 14 + level * 10;
+  const celebrate = (level: number, x: number, y: number, big = true) => {
+    levelPop = big ? 1 : 0.45; ringLife = 1; ringLevel = big ? level : 1;
+    const n = big ? 14 + level * 10 : 6 + level * 4;
     for (let i = 0; i < n; i++) {
       const a = Math.random() * TAU, sp = (160 + Math.random() * 260) * (0.8 + level * 0.25);
       confetti.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 120 * level, rot: Math.random() * TAU, vr: (Math.random() - 0.5) * 12, size: 4 + Math.random() * 5 + level, life: 1.1 + Math.random() * 0.5, color: `hsl(${(Math.random() * 360) | 0} 90% 68%)`, star: Math.random() < 0.3 });
@@ -92,7 +95,7 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
   /** 키캡 수 맞추기 — 있던 키는 두고 새 키만 뽑는다 */
   const setCount = (n: number) => {
     count = clamp(Math.round(n), 1, 9);
-    while (keys.length < count) keys.push({ gx: 0, gy: 0, press: 0, target: 0, hit: 0, flash: 0, look: makeLook() });
+    while (keys.length < count) keys.push({ gx: 0, gy: 0, press: 0, target: 0, hit: 0, flash: 0, look: makeLook(), wobble: 0, wobPhase: 0, drips: Array.from({ length: 5 }, () => 0.5 + Math.random() * 0.5) });
     if (keys.length > count) keys.length = count;
     layout();
   };
@@ -119,7 +122,10 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     const before = digitsOf(total);
     total++;
     bounce = 1;
-    if (digitsOf(total) > before) celebrate(digitsOf(total), c.w / 2, counterY);
+    const digits = digitsOf(total);
+    if (digits > before) celebrate(digits, c.w / 2, counterY); // 10 · 100 · 1000 — 글자가 커지는 큰 축하
+    else if (digits >= 2 && total % 10 ** (digits - 1) === 0) celebrate(digits, c.w / 2, counterY, false); // 20·30 … 200·300 … — 그 자리마다 터진다
+    if (haptic && canVibrate) navigator.vibrate(sw === "topre" ? 14 : sw === "blue" ? [6, 10, 6] : 9);
     if (sound) keySound(sw, "down", 0.92 + (i % 5) * 0.04);
     if (led) {
       const now = performance.now();
@@ -129,7 +135,7 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
       }
     }
   };
-  const releaseKey = (i: number) => { const k = keys[i]; if (!k || k.target === 0) return; k.target = 0; if (sound) keySound(sw, "up", 0.92 + (i % 5) * 0.04); };
+  const releaseKey = (i: number) => { const k = keys[i]; if (!k || k.target === 0) return; k.target = 0; k.wobble = 1; k.wobPhase = 0; if (sound) keySound(sw, "up", 0.92 + (i % 5) * 0.04); };
   const topQuad = (k: Key) => {
     const z = CAP_Z + CAP_H - k.press * TRAVEL;
     return [P(k.gx - CAP_T, k.gy - CAP_T, z), P(k.gx + CAP_T, k.gy - CAP_T, z), P(k.gx + CAP_T, k.gy + CAP_T, z), P(k.gx - CAP_T, k.gy + CAP_T, z)];
@@ -192,9 +198,11 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     ctx.save(); ctx.transform((ex[0] - o[0]) / S, (ex[1] - o[1]) / S, (ey[0] - o[0]) / S, (ey[1] - o[1]) / S, o[0], o[1]); draw(); ctx.restore();
   };
   /** 위가 좁은 사각뿔대(키캡) — 옆면 넷 + 윗면. alpha 로 투명 캡, sideAlpha 로 푸딩 */
-  const frustum = (x: number, y: number, z0: number, b: number, t: number, h: number, col: string, alpha = 1, sideCol = col, sideAlpha = alpha) => {
+  const frustum = (x: number, y: number, z0: number, b: number, t: number, h: number, col: string, alpha = 1, sideCol = col, sideAlpha = alpha, jelly?: { dx: number; dy: number; sq: number }) => {
     const B = [P(x - b, y - b, z0), P(x + b, y - b, z0), P(x + b, y + b, z0), P(x - b, y + b, z0)];
-    const T = [P(x - t, y - t, z0 + h), P(x + t, y - t, z0 + h), P(x + t, y + t, z0 + h), P(x - t, y + t, z0 + h)];
+    // 흐물흐물 — 윗면만 옆으로 밀리고 납작해진다 (밑은 스위치에 붙어 있다)
+    const jx = jelly?.dx ?? 0, jy = jelly?.dy ?? 0, sq = jelly?.sq ?? 1, tw = t * (2 - sq) ** 0.5, hz = h * sq;
+    const T = [P(x - tw + jx, y - tw + jy, z0 + hz), P(x + tw + jx, y - tw + jy, z0 + hz), P(x + tw + jx, y + tw + jy, z0 + hz), P(x - tw + jx, y + tw + jy, z0 + hz)];
     ctx.globalAlpha = sideAlpha;
     quad([B[0], B[1], T[1], T[0]], sideGrad([T[0], T[1]], [B[0], B[1]], sideCol, 0.95)); // 뒤
     quad([B[0], B[3], T[3], T[0]], sideGrad([T[0], T[3]], [B[0], B[3]], sideCol, 0.9)); // 왼쪽
@@ -346,6 +354,7 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     for (const k of keys) {
       k.press = k.target === 1 ? lerp(k.press, 1, 1 - damp(32, dt)) : lerp(k.press, 0, 1 - damp(15, dt));
       k.hit *= damp(6, dt); k.flash *= damp(3.2, dt);
+      k.wobble *= damp(3.2, dt); k.wobPhase += dt * 20;
     }
 
     const bg = ctx.createRadialGradient(c.w / 2, c.h * 0.55, 0, c.w / 2, c.h * 0.55, Math.max(c.w, c.h) * 0.8);
@@ -448,9 +457,47 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
         ctx.strokeStyle = "rgba(255,255,255,0.35)"; ctx.beginPath();
         for (const j of [1, 2, 3]) { ctx.moveTo(B[j][0], B[j][1]); ctx.lineTo(T[j][0], T[j][1]); } ctx.stroke();
       } else if (L.style === "pudding") {
-        frustum(k.gx, k.gy, z0, CAP_B, CAP_T, CAP_H, L.color, 1, "#f6f7fa", 0.62);
-        if (glow > 0.02) frustum(k.gx, k.gy, z0, CAP_B, CAP_T, CAP_H, `hsl(${hh} 100% 65%)`, 0, `hsl(${hh} 100% 65%)`, clamp(glow * 0.45, 0, 0.8));
-        withTop(k.gx, k.gy, z0 + CAP_H, topFinish);
+        /*
+         * 푸딩 — 우유빛 젤리 몸통 **위에 두툼한 소스 한 겹**이 얹혀 가장자리로 흘러내린다 (2026-09-13 사용자: 더 두텁게).
+         * LED 는 몸통까지만 스민다 — 소스까지 물들이면 캡 전체가 유리처럼 보여 소스가 사라진다.
+         * 손을 떼면 젤리처럼 흐물흐물(윗면이 옆으로 밀리고 납작해졌다 돌아온다).
+         */
+        const jelly = { dx: Math.sin(k.wobPhase) * k.wobble * 0.05, dy: Math.cos(k.wobPhase * 0.8) * k.wobble * 0.03, sq: 1 - Math.cos(k.wobPhase) * k.wobble * 0.09 };
+        const SAUCE = 0.24, bodyH = CAP_H - SAUCE, f = bodyH / CAP_H;
+        const midT = lerp(CAP_B, CAP_T, f);
+        const bodyJelly = { dx: jelly.dx * f, dy: jelly.dy * f, sq: jelly.sq };
+        frustum(k.gx, k.gy, z0, CAP_B, midT, bodyH, "#f7f8fb", 0.92, "#f6f7fa", 0.6, bodyJelly);
+        if (glow > 0.02) frustum(k.gx, k.gy, z0, CAP_B, midT, bodyH, `hsl(${hh} 100% 65%)`, 0, `hsl(${hh} 100% 65%)`, clamp(glow * 0.5, 0, 0.85), bodyJelly);
+        // 소스 — 몸통보다 살짝 넓게 얹혀 턱이 진다
+        const zs = z0 + bodyH * jelly.sq;
+        const jt = (2 - jelly.sq) ** 0.5;
+        const baseW = midT * jt * 1.09;
+        const ox = k.gx + jelly.dx * f, oy = k.gy + jelly.dy * f;
+        // 흘러내린 방울 — 소스 아래턱에서 몸통을 타고 (앞·오른쪽 가장자리만 보인다)
+        for (let d = 0; d < 5; d++) {
+          const along = -0.72 + d * 0.36, len = k.drips[d] * 0.17;
+          const onFront = d % 2 === 0;
+          const px = onFront ? ox + along * baseW : ox + baseW;
+          const py = onFront ? oy + baseW : oy + along * baseW;
+          const [ax, ay] = P(px, py, zs), [bx, by] = P(px, py, zs - len);
+          const w = S * 0.055;
+          ctx.fillStyle = shade(L.color, onFront ? 0.88 : 0.74);
+          ctx.beginPath();
+          ctx.moveTo(ax - w, ay - w * 0.4); ctx.lineTo(ax + w, ay - w * 0.4);
+          ctx.lineTo(bx + w * 0.78, by); ctx.arc(bx, by, w * 0.78, 0, Math.PI); ctx.closePath(); ctx.fill();
+          ctx.fillStyle = "rgba(255,255,255,0.42)";
+          ctx.beginPath(); ctx.arc(bx - w * 0.28, by - w * 0.2, w * 0.28, 0, TAU); ctx.fill();
+        }
+        frustum(ox, oy, zs, baseW, CAP_T * 1.03, SAUCE * jelly.sq, L.color, 1, shade(L.color, 0.94), 1, { dx: jelly.dx * (1 - f), dy: jelly.dy * (1 - f), sq: 1 });
+        // 소스 윗면 — 볼록하게 반짝
+        withTop(k.gx + jelly.dx, k.gy + jelly.dy, zs + SAUCE * jelly.sq, () => {
+          const t2 = CAP_T * 1.03;
+          const g = ctx.createRadialGradient(-0.08, -0.1, 0.02, 0, 0, t2 * 1.2);
+          g.addColorStop(0, "rgba(255,255,255,0.4)"); g.addColorStop(0.45, "rgba(255,255,255,0.06)"); g.addColorStop(1, "rgba(0,0,0,0.1)");
+          roundRectPath(ctx, -t2, -t2, t2 * 2, t2 * 2, 0.09); ctx.fillStyle = g; ctx.fill();
+          ctx.fillStyle = "rgba(255,255,255,0.75)";
+          ctx.beginPath(); ctx.ellipse(-t2 * 0.42, -t2 * 0.44, 0.07, 0.04, -0.6, 0, TAU); ctx.fill();
+        });
       } else if (L.style === "typewriter") {
         const R0 = 0.4, R1 = 0.36, zT = z0 + CAP_H * 0.85;
         const segs = 28;
@@ -533,6 +580,7 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     setParam(key, value) {
       if (key === "count" && typeof value === "number") setCount(value);
       if (key === "led" && typeof value === "boolean") led = value;
+      if (key === "haptic" && typeof value === "boolean") haptic = value;
       if (key === "switch" && typeof value === "string" && value in SWITCH_COLOR) sw = value as SwitchKind;
     },
   };

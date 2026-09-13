@@ -41,6 +41,7 @@ export function PlayScreen({ scene }: { scene: Scene }) {
   const [drift, setDrift] = useState(scene.idleDrift);
   const [tilt, setTilt] = useState(false);
   const [tiltAvailable, setTiltAvailable] = useState(false);
+  const [canVibrate, setCanVibrate] = useState(false);
   const [sound, setSound] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [canFullscreen, setCanFullscreen] = useState(false);
@@ -89,6 +90,7 @@ export function PlayScreen({ scene }: { scene: Scene }) {
   // ── 첫 렌더: 기기 능력 · 저장된 색 (렌더 중에 document 를 보면 hydration 이 어긋난다) ──
   useEffect(() => {
     setTiltAvailable("DeviceOrientationEvent" in window);
+    setCanVibrate(typeof navigator.vibrate === "function");
     setCanFullscreen(!!document.documentElement.requestFullscreen);
     if (scene.color.kind === "single") {
       const saved = loadColor(scene.slug);
@@ -420,7 +422,7 @@ export function PlayScreen({ scene }: { scene: Scene }) {
           {scene.sound ? <Toggle label="소리" on={sound} onClick={toggleSound} /> : null}
           {tiltAvailable && scene.tilt !== false ? <Toggle label="기울기" on={tilt} onClick={toggleTilt} /> : null}
           {(scene.controls ?? []).map((ctl) =>
-            ctl.kind === "switch" ? (
+            ctl.kind === "switch" && (ctl.requires !== "vibrate" || canVibrate) ? (
               <Toggle key={ctl.key} label={ctl.label} on={params[ctl.key] === true} onClick={() => setParam(ctl.key, !(params[ctl.key] === true))} />
             ) : null,
           )}

@@ -45,6 +45,12 @@ async function gesture(page, slug) {
     await m.up();
     return;
   }
+  if (slug === "squishy") {
+    // 가장자리 가까이를 꾹 — 윤곽이 밀려 나온 채로
+    await m.move(W * 0.38, H * 0.44); await m.down();
+    await page.waitForTimeout(600);
+    return;
+  }
   if (slug === "slime") {
     // 색 하나를 골라 옆에 덩어리가 생긴 채, 윗면을 살짝 눌러 잠긴 자국이 보이게 (끌지 않는다 — 끌면 아치가 생긴다)
     await page.getByRole("button", { name: "도구 열기" }).click().catch(() => {});
