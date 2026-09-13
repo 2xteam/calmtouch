@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ENGINES } from "@/lib/engines/index";
 import { EngineUnsupportedError, type SceneEngine } from "@/lib/engines/types";
+import { loadPref, savePref } from "@/lib/prefs";
 import { loadColor, rememberRecent, saveColor } from "@/lib/recent";
+import type { SceneControl } from "@/lib/engines/types";
 import type { Scene } from "@/lib/scenes";
 
 /**
@@ -51,8 +53,14 @@ export function PlayScreen({ scene }: { scene: Scene }) {
   const [params, setParams] = useState<Record<string, number | boolean | string>>(() =>
     Object.fromEntries((scene.controls ?? []).map((ctl) => [ctl.key, ctl.default])),
   );
+  /* 엔진이 만들어질 때 지금 값을 한 번에 넘기기 위해 — 이펙트 의존성에 넣지 않는다 */
+  const paramsRef = useRef(params);
+  useEffect(() => {
+    paramsRef.current = params;
+  }, [params]);
   const setParam = (key: string, value: number | boolean | string) => {
     setParams((p) => ({ ...p, [key]: value }));
+    savePref("ctl:" + key, value);
     engineRef.current?.setParam?.(key, value);
   };
 
@@ -86,6 +94,24 @@ export function PlayScreen({ scene }: { scene: Scene }) {
       const saved = loadColor(scene.slug);
       if (saved) setColor(saved);
     }
+    // 기억된 설정 — 소리·기울기·흐름과 조정 값. 엔진은 colorReady 뒤에 만들어져 이 값으로 시작한다
+    if (scene.sound && loadPref("sound") === true) setSound(true);
+    if (scene.idleDrift) { const d = loadPref("drift"); if (typeof d === "boolean") setDrift(d); }
+    if (
+      loadPref("tilt") === true &&
+      "DeviceOrientationEvent" in window &&
+      (window.location.protocol === "https:" || window.location.hostname === "localhost")
+    ) {
+      // iOS 는 허용을 사용자 동작 안에서만 받는다 — 값이 안 오면 1.8초 뒤 안내가 뜬다(toggleTilt 와 같은 길)
+      tiltBase.current = null;
+      setTilt(true);
+    }
+    const remembered: Record<string, number | boolean | string> = {};
+    for (const ctl of scene.controls ?? []) {
+      const v = validParam(ctl, loadPref("ctl:" + ctl.key));
+      if (v !== null) remembered[ctl.key] = v;
+    }
+    if (Object.keys(remembered).length) setParams((p) => ({ ...p, ...remembered }));
     setColorReady(true);
     rememberRecent(scene.slug);
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPanelOpen(false); };
@@ -112,13 +138,17 @@ export function PlayScreen({ scene }: { scene: Scene }) {
       .then((factory) => {
         if (cancelled) return;
         try {
-          engine = factory(canvas, { scene, color, sound: false });
+          engine = factory(canvas, { scene, color, sound });
         } catch (e) {
           setReason(e instanceof EngineUnsupportedError ? e.message : "이 장면을 그리는 중에 문제가 생겼어요");
           setStatus("no");
           return;
         }
         engineRef.current = engine;
+        for (const ctl of scene.controls ?? []) {
+          const v = paramsRef.current[ctl.key];
+          if (v !== undefined && v !== ctl.default) engine.setParam?.(ctl.key, v);
+        }
         setStatus("ok");
 
         let lastActive = performance.now();
@@ -240,6 +270,7 @@ export function PlayScreen({ scene }: { scene: Scene }) {
     };
     // color 는 처음 값만 넘기고 이후는 setColor 로 전달한다
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sound 는 만들 때 한 번만 읽고 이후는 setSound 로 전한다
   }, [colorReady, scene]);
 
   // ── 전체 화면 ─────────────────────────────────────────────
@@ -265,6 +296,7 @@ export function PlayScreen({ scene }: { scene: Scene }) {
       setTilt(false);
       setTiltNote("");
       tiltBase.current = null;
+      savePref("tilt", false);
       return;
     }
     // https 가 아니면 브라우저가 센서 이벤트를 보내지 않는다 (localhost 는 예외)
@@ -288,6 +320,7 @@ export function PlayScreen({ scene }: { scene: Scene }) {
     }
     tiltBase.current = null;
     setTilt(true);
+    savePref("tilt", true);
     setTiltNote("기울기 켬 — 센서 값을 기다려요…");
     const started = performance.now();
     window.setTimeout(() => {
@@ -305,7 +338,14 @@ export function PlayScreen({ scene }: { scene: Scene }) {
   const toggleSound = () => {
     const next = !sound;
     setSound(next);
+    savePref("sound", next);
     engineRef.current?.setSound?.(next);
+  };
+  const toggleDrift = () => {
+    setDrift((v) => {
+      savePref("drift", !v);
+      return !v;
+    });
   };
 
   const clear = () => {
@@ -376,7 +416,7 @@ export function PlayScreen({ scene }: { scene: Scene }) {
         </div>
 
         <div className="play-tools">
-          {scene.idleDrift ? <Toggle label="흐름" on={drift} onClick={() => setDrift((v) => !v)} /> : null}
+          {scene.idleDrift ? <Toggle label="흐름" on={drift} onClick={toggleDrift} /> : null}
           {scene.sound ? <Toggle label="소리" on={sound} onClick={toggleSound} /> : null}
           {tiltAvailable && scene.tilt !== false ? <Toggle label="기울기" on={tilt} onClick={toggleTilt} /> : null}
           {(scene.controls ?? []).map((ctl) =>
@@ -457,6 +497,14 @@ export function PlayScreen({ scene }: { scene: Scene }) {
       </section>
     </div>
   );
+}
+
+/** 기억된 조정 값이 이 장면의 범위 안인지 — 아니면 버린다(장면이 바뀌어 선택지가 달라졌을 수 있다) */
+function validParam(ctl: SceneControl, v: number | boolean | string | null): number | boolean | string | null {
+  if (v === null) return null;
+  if (ctl.kind === "stepper") return typeof v === "number" && Number.isFinite(v) ? Math.min(ctl.max, Math.max(ctl.min, Math.round(v))) : null;
+  if (ctl.kind === "switch") return typeof v === "boolean" ? v : null;
+  return typeof v === "string" && ctl.options.some((o) => o.value === v) ? v : null;
 }
 
 /**
