@@ -22,6 +22,7 @@ type Icon = "face" | "flower" | "cat" | "dino" | "bear";
 type Look = { style: Style; color: string; emoji: string; fig: Fig; figColor: string; icon: Icon; ink: string; letter: string };
 type Key = { gx: number; gy: number; press: number; target: number; hit: number; flash: number; look: Look };
 type Wave = { at: number; idx: number; amt: number };
+type Confetti = { x: number; y: number; vx: number; vy: number; rot: number; vr: number; size: number; life: number; color: string; star: boolean };
 
 const PASTELS = ["#f7c6d3", "#f9dcb8", "#f9f1b5", "#c9ecd0", "#bfe0f7", "#d8ccf5", "#fbfbfb", "#ffd6e7", "#cfeef0", "#e9d6c3"];
 const INKS = ["#e2637e", "#e58d3b", "#3f9e6b", "#3b7fd6", "#8a63d8", "#d64c4c"];
@@ -59,6 +60,18 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
   let ledMix = led ? 1 : 0;
   const waves: Wave[] = [];
   const pressedBy = new Map<number | string, number>();
+  /** 풍선 숫자 — 누를 때마다 통통, 자릿수가 늘면(10·100·1000) 더 크게 부풀고 축하가 커진다 */
+  let bounce = 0, levelPop = 0, ringLife = 0, ringLevel = 1;
+  const confetti: Confetti[] = [];
+  const digitsOf = (n: number) => Math.max(1, String(Math.max(0, n)).length);
+  const celebrate = (level: number, x: number, y: number) => {
+    levelPop = 1; ringLife = 1; ringLevel = level;
+    const n = 14 + level * 10;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * TAU, sp = (160 + Math.random() * 260) * (0.8 + level * 0.25);
+      confetti.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 120 * level, rot: Math.random() * TAU, vr: (Math.random() - 0.5) * 12, size: 4 + Math.random() * 5 + level, life: 1.1 + Math.random() * 0.5, color: `hsl(${(Math.random() * 360) | 0} 90% 68%)`, star: Math.random() < 0.3 });
+    }
+  };
 
   const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
   const makeLook = (): Look => {
@@ -102,7 +115,11 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
   const pressKey = (i: number) => {
     const k = keys[i];
     if (!k || k.target === 1) return;
-    k.target = 1; k.hit = 1; total++;
+    k.target = 1; k.hit = 1;
+    const before = digitsOf(total);
+    total++;
+    bounce = 1;
+    if (digitsOf(total) > before) celebrate(digitsOf(total), c.w / 2, counterY);
     if (sound) keySound(sw, "down", 0.92 + (i % 5) * 0.04);
     if (led) {
       const now = performance.now();
@@ -293,6 +310,33 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
   };
 
   const hueOf = (i: number, t: number) => (t * 40 + i * 30) % 360;
+  let counterY = 0;
+
+  /** 풍선 글자 — 글자마다 그림자·짙은 테·위에서 아래로 짙어지는 파스텔·작은 빛점. 살짝씩 따로 흔들린다 */
+  const drawBalloonNumber = (text: string, x: number, y: number, size: number, hue: number, t: number) => {
+    ctx.font = `900 ${size}px Pretendard, system-ui, sans-serif`;
+    ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.lineJoin = "round"; ctx.lineCap = "round";
+    const chars = [...text];
+    const widths = chars.map((ch) => ctx.measureText(ch).width);
+    const gap = size * 0.05;
+    const totalW = widths.reduce((a, b) => a + b, 0) + gap * (chars.length - 1);
+    let px = x - totalW / 2;
+    chars.forEach((ch, i) => {
+      const wob = Math.sin(t * 2.4 + i * 0.9) * size * 0.035;
+      const cyy = y + wob;
+      const h = (hue + i * 14) % 360;
+      ctx.fillStyle = "rgba(0, 10, 14, 0.35)"; ctx.fillText(ch, px + size * 0.03, cyy + size * 0.08);
+      ctx.lineWidth = size * 0.16; ctx.strokeStyle = `hsl(${h} 55% 28%)`; ctx.strokeText(ch, px, cyy);
+      const g = ctx.createLinearGradient(0, cyy - size * 0.5, 0, cyy + size * 0.5);
+      g.addColorStop(0, `hsl(${h} 95% 90%)`); g.addColorStop(0.55, `hsl(${h} 90% 72%)`); g.addColorStop(1, `hsl(${h} 85% 58%)`);
+      ctx.fillStyle = g; ctx.fillText(ch, px, cyy);
+      if (ch !== "," && ch !== ".") {
+        ctx.fillStyle = "rgba(255,255,255,0.75)";
+        ctx.beginPath(); ctx.ellipse(px + widths[i] * 0.3, cyy - size * 0.24, size * 0.09, size * 0.055, -0.5, 0, TAU); ctx.fill();
+      }
+      px += widths[i] + gap;
+    });
+  };
 
   const loop = createLoop((dt, t) => {
     if (c.resize()) fit();
@@ -308,15 +352,40 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     bg.addColorStop(0, "#10303a"); bg.addColorStop(1, DEEP_BG);
     ctx.fillStyle = bg; ctx.fillRect(0, 0, c.w, c.h);
 
-    // 횟수 + 축 이름
+    // 횟수 — 풍선 숫자. 자릿수만큼 크고, 누르면 통통, 자릿수가 늘면 크게 부풀며 축하
+    bounce *= damp(7, dt); levelPop *= damp(3.5, dt); ringLife = Math.max(0, ringLife - dt * 0.9);
+    const level = digitsOf(total);
+    const topY = P(0, -rows / 2 - CASE_PAD, CAP_Z + CAP_H)[1] - clamp(c.h * 0.13, 64, 120);
+    counterY = topY;
+    const baseSize = clamp(c.w * 0.1, 36, 68) * Math.min(1.9, 1 + 0.16 * (level - 1));
+    const scale = 1 + bounce * 0.22 + levelPop * 0.5;
+    const hue = (196 + level * 42) % 360;
+    if (ringLife > 0) {
+      const e = 1 - ringLife;
+      for (let r = 0; r < ringLevel; r++) {
+        const rad = (baseSize * 0.9 + e * baseSize * (1.6 + r * 0.9)) * (0.8 + ringLevel * 0.15);
+        ctx.strokeStyle = `hsla(${(hue + r * 50) % 360} 90% 72% / ${ringLife * 0.6})`; ctx.lineWidth = Math.max(1, (1 - e) * 6);
+        ctx.beginPath(); ctx.arc(c.w / 2, topY, rad, 0, TAU); ctx.stroke();
+      }
+    }
+    ctx.save(); ctx.translate(c.w / 2, topY); ctx.scale(scale, scale); ctx.translate(-c.w / 2, -topY);
+    drawBalloonNumber(total.toLocaleString("ko-KR"), c.w / 2, topY, baseSize, hue, t);
+    ctx.restore();
+    // 축하 종이 조각
+    for (let i = confetti.length - 1; i >= 0; i--) {
+      const p = confetti[i];
+      p.life -= dt; if (p.life <= 0) { confetti.splice(i, 1); continue; }
+      p.vy += 520 * dt; p.vx *= damp(1.2, dt); p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.globalAlpha = clamp(p.life, 0, 1);
+      ctx.fillStyle = p.color;
+      if (p.star) { ctx.beginPath(); for (let j = 0; j < 10; j++) { const rr = j % 2 === 0 ? p.size : p.size * 0.45; const a = (j / 10) * TAU; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } ctx.closePath(); ctx.fill(); }
+      else ctx.fillRect(-p.size / 2, -p.size / 3, p.size, p.size * 0.66);
+      ctx.restore();
+    }
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    const topY = P(0, -rows / 2 - CASE_PAD, CAP_Z + CAP_H)[1] - clamp(c.h * 0.12, 60, 104);
-    ctx.font = `700 ${clamp(c.w * 0.09, 34, 64)}px Pretendard, system-ui, sans-serif`;
-    ctx.fillStyle = "rgba(238, 247, 248, 0.92)";
-    ctx.fillText(total.toLocaleString("ko-KR"), c.w / 2, topY);
     ctx.font = `600 ${clamp(c.w * 0.03, 12, 15)}px Pretendard, system-ui, sans-serif`;
-    ctx.fillStyle = "rgba(238, 247, 248, 0.5)";
-    ctx.fillText(total === 0 ? `${SWITCH_NAME[sw]} · 키캡을 톡톡 눌러요 · 자판으로도 쳐 봐요` : `번 눌렀어요 · ${SWITCH_NAME[sw]}`, c.w / 2, topY + clamp(c.w * 0.06, 28, 44));
+    ctx.fillStyle = "rgba(238, 247, 248, 0.55)";
+    ctx.fillText(total === 0 ? `${SWITCH_NAME[sw]} · 키캡을 톡톡 눌러요 · 자판으로도 쳐 봐요` : `번 눌렀어요 · ${SWITCH_NAME[sw]}`, c.w / 2, topY + baseSize * 0.72 + 14);
 
     // 케이스
     const hx = cols / 2 + CASE_PAD, hy = rows / 2 + CASE_PAD;
@@ -459,7 +528,7 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     wheel() {},
     tilt() {},
     idle() {},
-    clear() { total = 0; shuffle(); },
+    clear() { total = 0; bounce = 0; levelPop = 0; ringLife = 0; confetti.length = 0; shuffle(); },
     setSound(on) { sound = on; },
     setParam(key, value) {
       if (key === "count" && typeof value === "number") setCount(value);

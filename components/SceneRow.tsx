@@ -9,6 +9,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
  * 마우스 기기에서는 **양 끝 화살표**가 뜨고, 카드 사이 빈 곳이나 카드를 **잡아 끌어도** 움직인다.
  * 끌었을 때는 손을 뗀 자리의 카드가 열리지 않게 클릭을 막는다. 휠은 건드리지 않는다 — 세로 스크롤은 페이지 것이다
  * (Shift+휠은 브라우저가 알아서 옆으로 민다).
+ *
+ * 옆으로 민 자리는 `sessionStorage` 에 남겨, 장면에 들어갔다 돌아와도 그대로다 (2026-09-13 사용자 · ScrollKeeper 와 같은 방식).
  */
 export function SceneRow({ label, children }: { label: string; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -24,17 +26,38 @@ export function SceneRow({ label, children }: { label: string; children: ReactNo
   }, []);
 
   useEffect(() => {
-    measure();
     const el = ref.current;
     if (!el) return;
-    el.addEventListener("scroll", measure, { passive: true });
+    const key = `calmtouch:row:${window.location.pathname}:${label}`;
+    try {
+      const saved = Number(window.sessionStorage.getItem(key) ?? "0");
+      if (saved > 0) el.scrollLeft = saved; // 스냅이 잡힌 자리이니 그대로 놓아도 어긋나지 않는다
+    } catch {
+      /* 시크릿 모드 등 */
+    }
+    measure();
+    let pending = 0;
+    const onScroll = () => {
+      measure();
+      if (pending) return;
+      pending = requestAnimationFrame(() => {
+        pending = 0;
+        try {
+          window.sessionStorage.setItem(key, String(Math.round(el.scrollLeft)));
+        } catch {
+          /* ignore */
+        }
+      });
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => {
-      el.removeEventListener("scroll", measure);
+      el.removeEventListener("scroll", onScroll);
       ro.disconnect();
+      if (pending) cancelAnimationFrame(pending);
     };
-  }, [measure]);
+  }, [measure, label]);
 
   const page = (dir: -1 | 1) => {
     const el = ref.current;
@@ -47,15 +70,15 @@ export function SceneRow({ label, children }: { label: string; children: ReactNo
     const el = ref.current;
     if (!el) return;
     drag.current = { x: e.clientX, left: el.scrollLeft, moved: false };
-    el.dataset.drag = "yes";
+    // 여기서 카드를 죽이면(pointer-events: none) 그냥 누른 클릭도 링크에 닿지 않는다 — 실제로 끌기 시작할 때만
   };
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const d = drag.current;
     const el = ref.current;
     if (!d || !el) return;
     const dx = e.clientX - d.x;
-    if (Math.abs(dx) > 6) d.moved = true;
-    el.scrollLeft = d.left - dx;
+    if (Math.abs(dx) > 6 && !d.moved) { d.moved = true; el.dataset.drag = "yes"; }
+    if (d.moved) el.scrollLeft = d.left - dx;
   };
   const endDrag = () => {
     const el = ref.current;
