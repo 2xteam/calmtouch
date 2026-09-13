@@ -34,8 +34,12 @@ const STYLES: Style[] = ["pastel", "emoji", "figure", "clear", "pudding", "print
 const SWITCH_COLOR: Record<SwitchKind, string> = { red: "#d9463f", blue: "#3b7bd6", brown: "#8b5a3c", black: "#2a2d31", topre: "#8e6bd9" };
 const SWITCH_NAME: Record<SwitchKind, string> = { red: "적축", blue: "청축", brown: "갈축", black: "흑축", topre: "무접점" };
 
-// 오블리크 투영 — 카메라가 앞·오른쪽·위에서 본다
-const TH = 0.42, CT = Math.cos(TH), ST = Math.sin(TH), FL = 0.6;
+/**
+ * 축측 투영 — z 는 언제나 화면 위, x·y 는 yaw 로 돌고 pitch(세로 눌림)로 눕는다.
+ * 빈 곳을 끌면 이 둘이 바뀌어 다른 각도에서 볼 수 있다 (2026-09-13 사용자).
+ *   pitch 1 에 가까울수록 위에서, 0 에 가까울수록 옆에서 본 모습
+ */
+const YAW0 = 0.42, PITCH0 = 0.6;
 // 키 하나의 치수 (키 간격 = 1)
 const CAP_B = 0.44, CAP_T = 0.33, CAP_H = 0.4, CAP_Z = 0.24, TRAVEL = 0.12;
 const CASE_H = 0.3, CASE_PAD = 0.2;
@@ -62,10 +66,15 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
   }
   let keys: Key[] = [];
   let cols = 1, rows = 1, S = 80, cx = 0, cy = 0;
+  let yaw = YAW0, pitch = PITCH0;
+  let CT = Math.cos(yaw), ST = Math.sin(yaw);
+  const setView = () => { CT = Math.cos(yaw); ST = Math.sin(yaw); };
   let total = 0;
   let ledMix = led ? 1 : 0;
   const waves: Wave[] = [];
   const pressedBy = new Map<number | string, number>();
+  /** 빈 곳을 끄는 중인 손가락 — 키를 누르는 손가락과 섞이지 않게 따로 센다 */
+  const orbiting = new Set<number>();
   /** 풍선 숫자 — 누를 때마다 통통, 자릿수가 늘면(10·100·1000) 더 크게 부풀고 축하가 커진다 */
   let bounce = 0, levelPop = 0, ringLife = 0, ringLevel = 1;
   const confetti: Confetti[] = [];
@@ -111,13 +120,16 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     keys = [];
     setCount(count);
   };
+  /** 돌려도 화면을 벗어나지 않게 — 바깥 반지름으로 잡아 yaw 와 무관한 크기를 쓴다 */
   const fit = () => {
-    const wU = (cols + CASE_PAD * 2) * CT + (rows + CASE_PAD * 2) * ST + 0.6;
-    const hU = ((cols + CASE_PAD * 2) * ST + (rows + CASE_PAD * 2) * CT) * FL + CAP_H + CASE_H + 1.1;
-    S = clamp(Math.min((c.w * 0.86) / wU, (c.h * 0.52) / hU), 34, 170);
+    const rad = Math.hypot(cols / 2 + CASE_PAD, rows / 2 + CASE_PAD);
+    const wU = rad * 2 + 0.7;
+    const hU = rad * 2 * pitch + CAP_H + CASE_H + RIM + 1.2;
+    S = clamp(Math.min((c.w * 0.86) / wU, (c.h * 0.52) / hU), 30, 170);
     cx = c.w / 2; cy = c.h * 0.57 + (CASE_H * S) / 2;
   };
-  const P = (x: number, y: number, z: number): [number, number] => [cx + (x * CT - y * ST) * S, cy + (x * ST + y * CT) * FL * S - z * S];
+  const P = (x: number, y: number, z: number): [number, number] => [cx + (x * CT - y * ST) * S, cy + (x * ST + y * CT) * pitch * S - z * S];
+  /** 카메라 쪽으로 얼마나 가까운가 — 클수록 앞 */
   const depth = (x: number, y: number) => x * ST + y * CT;
   shuffle();
 
@@ -145,9 +157,12 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     }
   };
   const releaseKey = (i: number) => { const k = keys[i]; if (!k || k.target === 0) return; k.target = 0; k.wobble = 1; k.wobPhase = 0; if (sound) keySound(sw, "up", 0.92 + (i % 5) * 0.04); };
-  const topQuad = (k: Key) => {
-    const z = CAP_Z + CAP_H - k.press * TRAVEL;
-    return [P(k.gx - CAP_T, k.gy - CAP_T, z), P(k.gx + CAP_T, k.gy - CAP_T, z), P(k.gx + CAP_T, k.gy + CAP_T, z), P(k.gx - CAP_T, k.gy + CAP_T, z)];
+  /** 키캡의 밑면·윗면 네 점 — 맞히기는 이 여덟 점이 만드는 실루엣으로 본다(어느 각도에서든 맞다) */
+  const capBox = (k: Key) => {
+    const z0 = CAP_Z - k.press * TRAVEL;
+    const zt = z0 + CAP_H + (k.look.style === "figure" ? 0.3 : 0);
+    const c4 = (w: number, z: number) => [P(k.gx - w, k.gy - w, z), P(k.gx + w, k.gy - w, z), P(k.gx + w, k.gy + w, z), P(k.gx - w, k.gy + w, z)] as [number, number][];
+    return { B: c4(CAP_B, z0), T: c4(CAP_T, zt) };
   };
   const inPoly = (pts: [number, number][], x: number, y: number) => {
     let ins = false;
@@ -157,14 +172,16 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     }
     return ins;
   };
+  /** 가까운 키부터 본다 — 앞 키에 가려진 자리는 앞 키가 눌린다(보이는 것만 눌린다) */
   const keyAt = (x: number, y: number) => {
     const order = keys.map((k, i) => i).sort((a, b) => depth(keys[b].gx, keys[b].gy) - depth(keys[a].gx, keys[a].gy));
     for (const i of order) {
-      const q = topQuad(keys[i]);
-      const ext: [number, number][] = [q[0], q[1], [q[1][0], q[1][1] + CAP_H * S * 0.9], [q[3][0], q[3][1] + CAP_H * S * 0.9], q[3]];
-      // 피규어 머리까지 눌리는 영역으로
-      const up: [number, number][] = [[q[0][0], q[0][1] - S * 0.55], [q[1][0], q[1][1] - S * 0.55], q[2], q[3]];
-      if (inPoly(q, x, y) || inPoly(ext, x, y) || (keys[i].look.style === "figure" && inPoly(up, x, y))) return i;
+      const { B, T } = capBox(keys[i]);
+      if (inPoly(T, x, y)) return i;
+      for (const f of SIDE_FACES) {
+        const [i0, i1] = f.i;
+        if (inPoly([B[i0], B[i1], T[i1], T[i0]], x, y)) return i;
+      }
     }
     return -1;
   };
@@ -195,6 +212,18 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
   };
   const path = (pts: [number, number][]) => { ctx.beginPath(); pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p[0], p[1]) : ctx.lineTo(p[0], p[1]))); ctx.closePath(); };
   const quad = (pts: [number, number][], fill: string | CanvasGradient) => { path(pts); ctx.fillStyle = fill; ctx.fill(); };
+  /** 상자의 옆면 넷 — 바깥 법선과 밑·윗면 모서리 짝 */
+  const SIDE_FACES: { n: [number, number]; i: [number, number] }[] = [
+    { n: [0, -1], i: [0, 1] }, { n: [1, 0], i: [1, 2] }, { n: [0, 1], i: [2, 3] }, { n: [-1, 0], i: [3, 0] },
+  ];
+  /** 면이 화면에서 어느 쪽을 보는지로 밝기를 정한다 — 돌려도 빛이 왼쪽 위에 그대로 있다 */
+  const faceLit = (n: [number, number]) => {
+    const sxc = n[0] * CT - n[1] * ST, dep = n[0] * ST + n[1] * CT;
+    return clamp(0.76 - sxc * 0.18 + dep * 0.1, 0.55, 1.02);
+  };
+  /** 먼 면부터 그리도록 정렬 */
+  const facesBackToFront = () => SIDE_FACES.slice().sort((a, b) => a.n[0] * ST + a.n[1] * CT - (b.n[0] * ST + b.n[1] * CT));
+
   /** 위→아래로 옅게 어두워지는 옆면 — 평면 한 색보다 둥글게 읽힌다 */
   const sideGrad = (top: [number, number][], bottom: [number, number][], col: string, k: number) => {
     const g = ctx.createLinearGradient((top[0][0] + top[1][0]) / 2, (top[0][1] + top[1][1]) / 2, (bottom[0][0] + bottom[1][0]) / 2, (bottom[0][1] + bottom[1][1]) / 2);
@@ -218,10 +247,10 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     const jx = jelly?.dx ?? 0, jy = jelly?.dy ?? 0, sq = jelly?.sq ?? 1, tw = t * (2 - sq) ** 0.5, hz = h * sq;
     const T = [P(x - tw + jx, y - tw + jy, z0 + hz), P(x + tw + jx, y - tw + jy, z0 + hz), P(x + tw + jx, y + tw + jy, z0 + hz), P(x - tw + jx, y + tw + jy, z0 + hz)];
     ctx.globalAlpha = sideAlpha;
-    quad([B[0], B[1], T[1], T[0]], sideGrad([T[0], T[1]], [B[0], B[1]], sideCol, 0.95)); // 뒤
-    quad([B[0], B[3], T[3], T[0]], sideGrad([T[0], T[3]], [B[0], B[3]], sideCol, 0.9)); // 왼쪽
-    quad([B[1], B[2], T[2], T[1]], sideGrad([T[1], T[2]], [B[1], B[2]], sideCol, 0.72)); // 오른쪽
-    quad([B[3], B[2], T[2], T[3]], sideGrad([T[3], T[2]], [B[3], B[2]], sideCol, 0.86)); // 앞
+    for (const f of facesBackToFront()) {
+      const [i0, i1] = f.i;
+      quad([B[i0], B[i1], T[i1], T[i0]], sideGrad([T[i0], T[i1]], [B[i0], B[i1]], sideCol, faceLit(f.n)));
+    }
     ctx.globalAlpha = alpha;
     quad(T, shade(col, 1.04));
     ctx.globalAlpha = 1;
@@ -232,10 +261,10 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     const B = [P(x - wx, y - wy, z0), P(x + wx, y - wy, z0), P(x + wx, y + wy, z0), P(x - wx, y + wy, z0)];
     const T = [P(x - wx, y - wy, z0 + h), P(x + wx, y - wy, z0 + h), P(x + wx, y + wy, z0 + h), P(x - wx, y + wy, z0 + h)];
     ctx.globalAlpha = alpha;
-    quad([B[0], B[1], T[1], T[0]], shade(col, 0.95));
-    quad([B[0], B[3], T[3], T[0]], shade(col, 0.9));
-    quad([B[1], B[2], T[2], T[1]], shade(col, 0.72));
-    quad([B[3], B[2], T[2], T[3]], shade(col, 0.86));
+    for (const f of facesBackToFront()) {
+      const [i0, i1] = f.i;
+      quad([B[i0], B[i1], T[i1], T[i0]], shade(col, faceLit(f.n)));
+    }
     quad(T, shade(col, 1.06));
     ctx.globalAlpha = 1;
   };
@@ -405,7 +434,9 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     // 횟수 — 풍선 숫자. 자릿수만큼 크고, 누르면 통통, 자릿수가 늘면 크게 부풀며 축하
     bounce *= damp(7, dt); levelPop *= damp(3.5, dt); ringLife = Math.max(0, ringLife - dt * 0.9);
     const level = digitsOf(total);
-    const topY = P(0, -rows / 2 - CASE_PAD, CAP_Z + CAP_H)[1] - clamp(c.h * 0.13, 64, 120);
+    // 숫자 자리 — 모델의 한 점에 매달면 돌릴 때 케이스와 겹친다. 물체의 화면 윗끝에서 잰다
+    const radU = Math.hypot(cols / 2 + CASE_PAD, rows / 2 + CASE_PAD);
+    const topY = clamp(cy - (radU * pitch + RIM + CAP_H + 0.3) * S - clamp(c.h * 0.07, 34, 64), c.h * 0.1, c.h * 0.45);
     counterY = topY;
     const baseSize = clamp(c.w * 0.1, 36, 68) * Math.min(1.9, 1 + 0.16 * (level - 1));
     const scale = 1 + bounce * 0.22 + levelPop * 0.5;
@@ -436,7 +467,7 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     ctx.font = `600 ${clamp(c.w * 0.03, 12, 15)}px Pretendard, system-ui, sans-serif`;
     ctx.fillStyle = "rgba(238, 247, 248, 0.55)";
     // 숫자 아래에는 축 이름만 — "번 눌렀어요" 는 숫자와 떨어져 있어 어색했다 (2026-09-13 사용자)
-    ctx.fillText(total === 0 ? `${SWITCH_NAME[sw]} · 키캡을 톡톡 눌러요 · 자판으로도 쳐 봐요` : SWITCH_NAME[sw], c.w / 2, topY + baseSize * 0.72 + 14);
+    ctx.fillText(total === 0 ? `${SWITCH_NAME[sw]} · 키캡을 톡톡 눌러요 · 빈 곳을 끌면 돌아가요` : SWITCH_NAME[sw], c.w / 2, topY + baseSize * 0.72 + 14);
 
     /*
      * 케이스 — **투명 아크릴**. 바닥판(z 0) 위로 벽이 RIM 만큼 솟아 키캡의 아랫부분을 감싼다.
@@ -451,29 +482,30 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
 
     for (let k = 6; k >= 1; k--) {
       const g = k * 0.05;
-      quad([P(-hx - g, -hy - g, -CASE_H), P(hx + g * 2.4, -hy - g, -CASE_H), P(hx + g * 2.4, hy + g * 2.2, -CASE_H), P(-hx - g, hy + g * 2.2, -CASE_H)], "rgba(0, 8, 12, 0.07)");
+      quad([P(-hx - g, -hy - g, -CASE_H), P(hx + g, -hy - g, -CASE_H), P(hx + g, hy + g, -CASE_H), P(-hx - g, hy + g, -CASE_H)], "rgba(0, 8, 12, 0.07)");
     }
-    // 뒤·왼쪽 껍데기 + 윗테
+    // 어느 쪽이 카메라에 가까운지 — 돌리면 앞뒤가 뒤바뀐다
+    const ny = CT >= 0 ? 1 : -1, nx = ST >= 0 ? 1 : -1;
+    // 먼 쪽 껍데기 + 윗테 (키캡보다 먼저)
     ctx.globalAlpha = 0.5;
-    wallY(-hy, -hx, hx, -CASE_H, RIM, shade(ACRYL, 0.7));
-    wallX(-hx, -hy, hy, -CASE_H, RIM, shade(ACRYL, 0.78));
-    flat(-hx, -hy, hx, -ihy, RIM, shade(ACRYL, 1.02));
-    flat(-hx, -ihy, -ihx, hy, RIM, shade(ACRYL, 0.98));
+    wallY(-ny * hy, -hx, hx, -CASE_H, RIM, shade(ACRYL, faceLit([0, -ny])));
+    wallX(-nx * hx, -hy, hy, -CASE_H, RIM, shade(ACRYL, faceLit([-nx, 0])));
     ctx.globalAlpha = 0.3;
-    flat(ihx, -hy, hx, ihy, RIM, shade(ACRYL, 1));
+    flat(-hx, -ny * hy, hx, -ny * ihy, RIM, shade(ACRYL, 1.02));
+    flat(-nx * ihx, -ihy, -nx * hx, ihy, RIM, shade(ACRYL, 0.98));
     ctx.globalAlpha = 0.6;
-    wallY(-ihy, -ihx, ihx, 0, RIM, shade(ACRYL, 0.88));
-    wallX(-ihx, -ihy, ihy, 0, RIM, shade(ACRYL, 0.93));
+    wallY(-ny * ihy, -ihx, ihx, 0, RIM, shade(ACRYL, 0.9));
+    wallX(-nx * ihx, -ihy, ihy, 0, RIM, shade(ACRYL, 0.93));
     ctx.globalAlpha = 1;
-    // 뒤·왼쪽 모서리 — 키캡 뒤에 있으므로 캡보다 먼저 그린다
+    // 먼 쪽 모서리 — 키캡보다 먼저 그려야 캡 위에 선이 얹히지 않는다
     ctx.lineWidth = Math.max(1, S * 0.012); ctx.strokeStyle = "rgba(255,255,255,0.5)";
     for (const [ex, ey] of [[hx, hy], [ihx, ihy]] as const) {
-      const back = P(-ex, -ey, RIM), right = P(ex, -ey, RIM), left = P(-ex, ey, RIM);
-      ctx.beginPath(); ctx.moveTo(left[0], left[1]); ctx.lineTo(back[0], back[1]); ctx.lineTo(right[0], right[1]); ctx.stroke();
+      const far = P(-nx * ex, -ny * ey, RIM), a1 = P(nx * ex, -ny * ey, RIM), a2 = P(-nx * ex, ny * ey, RIM);
+      ctx.beginPath(); ctx.moveTo(a2[0], a2[1]); ctx.lineTo(far[0], far[1]); ctx.lineTo(a1[0], a1[1]); ctx.stroke();
     }
     ctx.strokeStyle = "rgba(255,255,255,0.28)";
     {
-      const a = P(hx, -hy, RIM), b2 = P(hx, -hy, -CASE_H);
+      const a = P(-nx * hx, -ny * hy, RIM), b2 = P(-nx * hx, -ny * hy, -CASE_H);
       ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b2[0], b2[1]); ctx.stroke();
     }
     // 바닥판 — 스위치 소켓·핀·LED
@@ -626,22 +658,23 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
 
     // 앞·오른쪽 껍데기 — 키캡 **위에** 덮어 감싸고, 반투명이라 캡 밑동과 스위치가 비친다
     ctx.globalAlpha = 0.16;
-    wallY(ihy, -ihx, ihx, 0, RIM, shade(ACRYL, 1));
-    wallX(ihx, -ihy, ihy, 0, RIM, shade(ACRYL, 0.92));
+    wallY(ny * ihy, -ihx, ihx, 0, RIM, shade(ACRYL, 1));
+    wallX(nx * ihx, -ihy, ihy, 0, RIM, shade(ACRYL, 0.92));
     ctx.globalAlpha = 0.3;
-    flat(-hx, ihy, hx, hy, RIM, shade(ACRYL, 1.05));
+    flat(-hx, ny * ihy, hx, ny * hy, RIM, shade(ACRYL, 1.05));
+    flat(nx * ihx, -ihy, nx * hx, ihy, RIM, shade(ACRYL, 1));
     ctx.globalAlpha = 0.2;
-    wallY(hy, -hx, hx, -CASE_H, RIM, shade(ACRYL, 0.88));
-    wallX(hx, -hy, hy, -CASE_H, RIM, shade(ACRYL, 0.8));
+    wallY(ny * hy, -hx, hx, -CASE_H, RIM, shade(ACRYL, faceLit([0, ny])));
+    wallX(nx * hx, -hy, hy, -CASE_H, RIM, shade(ACRYL, faceLit([nx, 0])));
     ctx.globalAlpha = 1;
-    // 앞·오른쪽 모서리만 캡 위에 — 뒤쪽 모서리는 이미 캡보다 먼저 그렸다
+    // 가까운 쪽 모서리만 캡 위에 — 먼 쪽은 이미 캡보다 먼저 그렸다
     ctx.lineWidth = Math.max(1, S * 0.012); ctx.strokeStyle = "rgba(255,255,255,0.55)";
     for (const [ex, ey] of [[hx, hy], [ihx, ihy]] as const) {
-      const right = P(ex, -ey, RIM), corner = P(ex, ey, RIM), front = P(-ex, ey, RIM);
-      ctx.beginPath(); ctx.moveTo(right[0], right[1]); ctx.lineTo(corner[0], corner[1]); ctx.lineTo(front[0], front[1]); ctx.stroke();
+      const a1 = P(nx * ex, -ny * ey, RIM), near = P(nx * ex, ny * ey, RIM), a2 = P(-nx * ex, ny * ey, RIM);
+      ctx.beginPath(); ctx.moveTo(a1[0], a1[1]); ctx.lineTo(near[0], near[1]); ctx.lineTo(a2[0], a2[1]); ctx.stroke();
     }
     ctx.strokeStyle = "rgba(255,255,255,0.3)";
-    for (const [ex, ey] of [[hx, hy], [-hx, hy]] as const) {
+    for (const [ex, ey] of [[nx * hx, ny * hy], [-nx * hx, ny * hy]] as const) {
       const a = P(ex, ey, RIM), b = P(ex, ey, -CASE_H);
       ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
     }
@@ -656,7 +689,7 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
         g.addColorStop(0, "#ffffff"); g.addColorStop(0.34, "#b7bec6"); g.addColorStop(0.62, "#eef2f5"); g.addColorStop(1, "#79818b");
         return g;
       };
-      const [ax, ay] = P(-hx + 0.04, hy * 0.35, RIM * 0.45);
+      const [ax, ay] = P(-nx * (hx - 0.04), ny * hy * 0.35, RIM * 0.45);
       ctx.lineWidth = Math.max(1.8, S * 0.032); ctx.strokeStyle = metal(ax, ay, S * 0.1);
       ctx.beginPath(); ctx.ellipse(ax - S * 0.05, ay - S * 0.06, S * 0.09, S * 0.062, -0.7, 0, TAU); ctx.stroke();
       let last: [number, number] = [ax - S * 0.12, ay - S * 0.04];
@@ -687,18 +720,37 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     start: () => loop.start(),
     stop: () => loop.stop(),
     dispose: () => { loop.stop(); window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); },
-    pointerDown(x, y, id) { const i = keyAt(x, y); if (i >= 0) { pressedBy.set(id, i); pressKey(i); } },
+    pointerDown(x, y, id) {
+      const i = keyAt(x, y);
+      if (i >= 0) { pressedBy.set(id, i); pressKey(i); return; }
+      orbiting.add(id); // 키캡이 아닌 곳 → 돌려 보기
+    },
     pointerMove(x, y, _dx, _dy, id, pressed) {
+      if (orbiting.has(id)) {
+        if (!pressed) { orbiting.delete(id); return; }
+        yaw -= _dx * 0.009;
+        pitch = clamp(pitch + _dy * 0.0035, 0.12, 0.95);
+        setView(); fit();
+        return;
+      }
       if (!pressed) return;
       const cur = pressedBy.get(id); const i = keyAt(x, y);
       if (cur !== undefined && i !== cur) { releaseKey(cur); pressedBy.delete(id); }
       if (i >= 0 && i !== cur) { pressedBy.set(id, i); pressKey(i); }
     },
-    pointerUp(id) { const i = pressedBy.get(id); if (i !== undefined) { releaseKey(i); pressedBy.delete(id); } },
+    pointerUp(id) {
+      orbiting.delete(id);
+      const i = pressedBy.get(id);
+      if (i !== undefined) { releaseKey(i); pressedBy.delete(id); }
+    },
     wheel() {},
     tilt() {},
     idle() {},
-    clear() { total = 0; bounce = 0; levelPop = 0; ringLife = 0; confetti.length = 0; shuffle(); },
+    clear() {
+      total = 0; bounce = 0; levelPop = 0; ringLife = 0; confetti.length = 0;
+      yaw = YAW0; pitch = PITCH0; setView(); // 각도도 처음으로
+      shuffle();
+    },
     setSound(on) { sound = on; },
     setParam(key, value) {
       if (key === "count" && typeof value === "number") setCount(value);
