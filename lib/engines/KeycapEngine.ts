@@ -67,10 +67,14 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
   let bounce = 0, levelPop = 0, ringLife = 0, ringLevel = 1;
   const confetti: Confetti[] = [];
   const digitsOf = (n: number) => Math.max(1, String(Math.max(0, n)).length);
-  const celebrate = (level: number, x: number, y: number, big = true) => {
-    levelPop = big ? 1 : 0.45; ringLife = 1; ringLevel = big ? level : 1;
-    if (sound) { if (big) gameFanfare(level); else gamePop(level); }
-    const n = big ? 14 + level * 10 : 6 + level * 4;
+  /**
+   * 축하 — `level` 은 터지는 크기(2=열 단위, 3=백 단위, 4=천 단위 …), `grow` 는 자릿수가 늘어 글자가 커지는 순간인가.
+   * 열 단위는 동전 소리로 가볍게, 백 단위부터는 팡파르로 (2026-09-13 사용자: 모든 단위에서 나게).
+   */
+  const celebrate = (level: number, x: number, y: number, grow = true) => {
+    levelPop = grow ? 1 : 0.45; ringLife = 1; ringLevel = grow ? level : Math.max(1, level - 1);
+    if (sound) { if (grow || level >= 3) gameFanfare(level); else gamePop(level); }
+    const n = grow ? 14 + level * 10 : 6 + level * 5;
     for (let i = 0; i < n; i++) {
       const a = Math.random() * TAU, sp = (160 + Math.random() * 260) * (0.8 + level * 0.25);
       confetti.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 120 * level, rot: Math.random() * TAU, vr: (Math.random() - 0.5) * 12, size: 4 + Math.random() * 5 + level, life: 1.1 + Math.random() * 0.5, color: `hsl(${(Math.random() * 360) | 0} 90% 68%)`, star: Math.random() < 0.3 });
@@ -123,9 +127,11 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     const before = digitsOf(total);
     total++;
     bounce = 1;
+    // 0 이 몇 개로 끝나는지가 곧 축하의 크기 — 10·20·110 은 열 단위, 100·200·1300 은 백 단위, 1000·2000 은 천 단위
     const digits = digitsOf(total);
-    if (digits > before) celebrate(digits, c.w / 2, counterY); // 10 · 100 · 1000 — 글자가 커지는 큰 축하
-    else if (digits >= 2 && total % 10 ** (digits - 1) === 0) celebrate(digits, c.w / 2, counterY, false); // 20·30 … 200·300 … — 그 자리마다 터진다
+    let tier = 0;
+    for (let pow = 10; pow <= 1e12 && total % pow === 0; pow *= 10) tier++;
+    if (tier > 0) celebrate(tier + 1, c.w / 2, counterY, digits > before);
     if (haptic && canVibrate) navigator.vibrate(sw === "topre" ? 14 : sw === "blue" ? [6, 10, 6] : 9);
     if (sound) keySound(sw, "down", 0.92 + (i % 5) * 0.04);
     if (led) {
