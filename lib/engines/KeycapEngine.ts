@@ -395,7 +395,8 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.font = `600 ${clamp(c.w * 0.03, 12, 15)}px Pretendard, system-ui, sans-serif`;
     ctx.fillStyle = "rgba(238, 247, 248, 0.55)";
-    ctx.fillText(total === 0 ? `${SWITCH_NAME[sw]} · 키캡을 톡톡 눌러요 · 자판으로도 쳐 봐요` : `번 눌렀어요 · ${SWITCH_NAME[sw]}`, c.w / 2, topY + baseSize * 0.72 + 14);
+    // 숫자 아래에는 축 이름만 — "번 눌렀어요" 는 숫자와 떨어져 있어 어색했다 (2026-09-13 사용자)
+    ctx.fillText(total === 0 ? `${SWITCH_NAME[sw]} · 키캡을 톡톡 눌러요 · 자판으로도 쳐 봐요` : SWITCH_NAME[sw], c.w / 2, topY + baseSize * 0.72 + 14);
 
     // 케이스
     const hx = cols / 2 + CASE_PAD, hy = rows / 2 + CASE_PAD;
