@@ -348,8 +348,8 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
     // 자국 — 다 잠긴 뒤에도 누르고 있으면 바닥에 닿아 뚫린다. 손을 떼면 말랑이라 천천히 부풀어 사라진다
     for (let i = dents.length - 1; i >= 0; i--) {
       const d = dents[i];
-      if (!d.held) { d.depth -= (dt / 2.4) * (0.35 + (1 - d.depth) * 1.3); if (d.depth <= 0) dents.splice(i, 1); continue; }
-      d.depth = Math.min(1, d.depth + dt / 0.3);
+      if (!d.held) { d.depth -= (dt / 7.2) * (0.35 + (1 - d.depth) * 1.3); if (d.depth <= 0) dents.splice(i, 1); continue; }
+      d.depth = Math.min(1, d.depth + dt / 0.45);
       if (d.depth >= 1) d.through = Math.min(1, d.through + dt / 0.8);
       const [u, v] = toUV(d.x, d.y);
       if (d.through > 0.5 && d.punched < 1) { d.punched = 1; punch(u, v, (FINGER_R * 0.45) / bw, false); }
@@ -372,7 +372,7 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
     // 말랑이 — 손이 닿아 있을 때는 손 근처만 움직이고, 떼면 제 모양으로 천천히 부풀어 돌아온다 (슬로우 라이징)
     const touching = [...fingers.values()].some((f) => f.pressed);
     if (!touching) {
-      const k = 1 - damp(1.6, dt);
+      const k = 1 - damp(0.55, dt); // 꾸덕한 말랑이 — 제 모양으로 세 배 천천히 기어 돌아온다 (2026-09-13 사용자)
       for (let i = 0; i < N; i++) { const n = outer[i], r0 = rest[i]; if (!r0) continue; n.vx = 0; n.vy = 0; n.x += (r0.x - n.x) * k; n.y += (r0.y - n.y) * k; }
       bbox();
     } else {

@@ -312,12 +312,12 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
     for (let i = dents.length - 1; i >= 0; i--) {
       const d = dents[i];
       if (d.held) {
-        d.depth = Math.min(1, d.depth + dt / (squishy ? 0.25 : 0.35));
+        d.depth = Math.min(1, d.depth + dt / (squishy ? 0.45 : 0.35));
         // 다 잠긴 뒤에도 누르고 있으면 바닥에 닿아 구멍이 난다 (말랑이는 폼이라 뚫리지 않는다)
         if (d.depth >= 1 && !squishy) d.through = Math.min(1, d.through + dt / 0.55);
       } else if (!clay) {
         // 슬라임은 흘러 메워지고, 말랑이는 슬로우 라이징 — 처음엔 천천히, 끝엔 빨리 부푼다
-        d.depth -= squishy ? (dt / 2.4) * (0.35 + (1 - d.depth) * 1.3) : dt / 2.5;
+        d.depth -= squishy ? (dt / 7.2) * (0.35 + (1 - d.depth) * 1.3) : dt / 2.5;
         d.through = Math.max(0, d.through - dt / 1.6);
         if (d.depth <= 0 && d.through <= 0) { dents.splice(i, 1); continue; }
       }
@@ -430,7 +430,8 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
         const l = nodes[(i + N - 1) % N], r = nodes[(i + 1) % N], n = nodes[i];
         vxs[i] = n.vx * 0.2 + (l.vx + r.vx) * 0.4; vys[i] = n.vy * 0.2 + (l.vy + r.vy) * 0.4;
       }
-      const dampK = Math.exp(-(clay ? 26 : squishy ? 7 : 10) * hs); // 슬라임 점도 ↑ (2026-09-11 사용자: 너무 흐느적) · 말랑이는 조금 튄다
+      // 점도 = 감쇠. 말랑이는 슬라임의 두 배가 넘게 꾸덕해 눌린 자리가 스프링보다 느리게 돌아온다(과감쇠) — 2026-09-13 사용자: 3배
+      const dampK = Math.exp(-(clay ? 26 : squishy ? 21 : 10) * hs);
       for (let i = 0; i < N; i++) {
         const n = nodes[i];
         n.vx = vxs[i] * dampK; n.vy = vys[i] * dampK;

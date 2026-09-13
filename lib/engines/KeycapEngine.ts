@@ -37,8 +37,12 @@ const SWITCH_NAME: Record<SwitchKind, string> = { red: "적축", blue: "청축",
 // 오블리크 투영 — 카메라가 앞·오른쪽·위에서 본다
 const TH = 0.42, CT = Math.cos(TH), ST = Math.sin(TH), FL = 0.6;
 // 키 하나의 치수 (키 간격 = 1)
-const CAP_B = 0.44, CAP_T = 0.33, CAP_H = 0.4, CAP_Z = 0.2, TRAVEL = 0.15;
+const CAP_B = 0.44, CAP_T = 0.33, CAP_H = 0.4, CAP_Z = 0.24, TRAVEL = 0.12;
 const CASE_H = 0.3, CASE_PAD = 0.2;
+/** 케이스 벽이 바닥판 위로 솟은 높이 — 이만큼 키캡을 감싼다 (2026-09-13 사용자 사진) */
+const RIM = 0.3;
+/** 투명 아크릴 — 축이 비쳐 보이라고 케이스를 통째로 이 재질로 (2026-09-13 사용자) */
+const ACRYL = "#dfe9f0";
 
 export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
   const c = createCanvas2D(canvas);
@@ -58,7 +62,6 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
   }
   let keys: Key[] = [];
   let cols = 1, rows = 1, S = 80, cx = 0, cy = 0;
-  let caseColor = "#f4f5f7";
   let total = 0;
   let ledMix = led ? 1 : 0;
   const waves: Wave[] = [];
@@ -106,7 +109,6 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
   };
   const shuffle = () => {
     keys = [];
-    caseColor = pick(["#f4f5f7", "#f4f5f7", "#22262b", "rgba(230,240,246,0.55)"]);
     setCount(count);
   };
   const fit = () => {
@@ -186,6 +188,11 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     const [r, g, b] = rgbOf(col);
     return `rgba(${clamp(r * k, 0, 255) | 0},${clamp(g * k, 0, 255) | 0},${clamp(b * k, 0, 255) | 0},${a})`;
   };
+  /** 축 색을 우유빛에 섞는다 — 받침처럼 "무슨 축인지" 만 알려 주면 되는 자리 */
+  const milky = (col: string, t: number) => {
+    const A = rgbOf(col), B = rgbOf("#f7fafc");
+    return `rgb(${lerp(A[0], B[0], t) | 0},${lerp(A[1], B[1], t) | 0},${lerp(A[2], B[2], t) | 0})`;
+  };
   const path = (pts: [number, number][]) => { ctx.beginPath(); pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p[0], p[1]) : ctx.lineTo(p[0], p[1]))); ctx.closePath(); };
   const quad = (pts: [number, number][], fill: string | CanvasGradient) => { path(pts); ctx.fillStyle = fill; ctx.fill(); };
   /** 위→아래로 옅게 어두워지는 옆면 — 평면 한 색보다 둥글게 읽힌다 */
@@ -220,6 +227,19 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     ctx.globalAlpha = 1;
     return { T, B };
   };
+  /** 직사각 기둥 — 위아래 같은 굵기. 십자 스템의 두 막대에 쓴다 */
+  const boxPrism = (x: number, y: number, z0: number, wx: number, wy: number, h: number, col: string, alpha = 1) => {
+    const B = [P(x - wx, y - wy, z0), P(x + wx, y - wy, z0), P(x + wx, y + wy, z0), P(x - wx, y + wy, z0)];
+    const T = [P(x - wx, y - wy, z0 + h), P(x + wx, y - wy, z0 + h), P(x + wx, y + wy, z0 + h), P(x - wx, y + wy, z0 + h)];
+    ctx.globalAlpha = alpha;
+    quad([B[0], B[1], T[1], T[0]], shade(col, 0.95));
+    quad([B[0], B[3], T[3], T[0]], shade(col, 0.9));
+    quad([B[1], B[2], T[2], T[1]], shade(col, 0.72));
+    quad([B[3], B[2], T[2], T[3]], shade(col, 0.86));
+    quad(T, shade(col, 1.06));
+    ctx.globalAlpha = 1;
+  };
+
   const roundRectPath = (g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
     g.beginPath(); g.moveTo(x + r, y); g.lineTo(x + w - r, y); g.quadraticCurveTo(x + w, y, x + w, y + r);
     g.lineTo(x + w, y + h - r); g.quadraticCurveTo(x + w, y + h, x + w - r, y + h); g.lineTo(x + r, y + h);
@@ -306,22 +326,36 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
       g.fillStyle = "#3a2a24"; g.beginPath(); g.arc(-s * 0.12, -s * 0.02, s * 0.04, 0, TAU); g.arc(s * 0.12, -s * 0.02, s * 0.04, 0, TAU); g.arc(0, s * 0.1, s * 0.045, 0, TAU); g.fill();
     }
   };
-  /** 스위치 — 하우징(우유빛 상자) + 축 색 스템 (+ 스프링). 캡 아래 틈으로 보인다 */
-  const drawSwitch = (k: Key, press: number, full: boolean) => {
+  /**
+   * 스위치 — 사용자 사진(체리 MX 계열)을 따른다.
+   *   · 아랫집: 우유빛 불투명 받침 + 금속 접점 한 조각
+   *   · **십자 스템**: 축 색 막대 둘을 겹쳐 + 모양. 캡 밑까지 길게 올라간다
+   *   · 윗집: **맑은 덮개**를 스템 위에 반투명으로 덮는다 — 그래야 색이 비쳐 어떤 축인지 보인다 (2026-09-13 사용자)
+   */
+  const drawSwitch = (k: Key, press: number) => {
     const stemCol = SWITCH_COLOR[sw];
-    if (full) {
-      frustum(k.gx, k.gy, 0.02, 0.3, 0.28, 0.12, sw === "topre" ? "#f1eef8" : "#e9eef1", 0.9);
-      const [sx, sy] = P(k.gx, k.gy, 0.14);
-      for (let j = 0; j < 3; j++) { ctx.strokeStyle = "rgba(120,130,140,0.55)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(sx, sy - j * S * 0.03 - S * 0.02, S * 0.1, S * 0.035, 0, 0, TAU); ctx.stroke(); }
-    }
-    // 불투명 캡 아래에서는 하우징 자체를 축 색으로 — 캡과 케이스 사이 틈으로 색이 보인다 (2026-09-12 사용자: 축 색이 보여야)
-    if (!full) frustum(k.gx, k.gy, 0.02, 0.31, 0.29, 0.12, sw === "topre" ? "#efe8fb" : shade(stemCol, 1.12), 1);
-    const zt = CAP_Z + 0.06 - press * TRAVEL;
+    const zt = CAP_Z + 0.08 - press * TRAVEL;
+    // 받침 — 축 색을 섞은 우유빛. 캡 아래로 이 띠가 보여 어떤 축인지 알 수 있다 (2026-09-13 사용자)
+    boxPrism(k.gx, k.gy, 0.005, 0.3, 0.3, 0.14, milky(stemCol, 0.04), 1);
+    // 금속 접점 — 받침 안에서 반짝
+    const [mx, my] = P(k.gx - 0.1, k.gy + 0.04, 0.145);
+    ctx.fillStyle = "rgba(196, 204, 212, 0.9)";
+    ctx.fillRect(mx - S * 0.03, my - S * 0.05, S * 0.06, S * 0.05);
     if (sw === "topre") {
-      const [dx, dy] = P(k.gx, k.gy, 0.1);
+      const [dx, dy] = P(k.gx, k.gy, 0.2);
       ctx.fillStyle = stemCol; ctx.beginPath(); ctx.ellipse(dx, dy - S * 0.05, S * 0.2, S * 0.16, 0, 0, TAU); ctx.fill();
       ctx.fillStyle = "rgba(255,255,255,0.25)"; ctx.beginPath(); ctx.ellipse(dx - S * 0.06, dy - S * 0.1, S * 0.07, S * 0.04, 0, 0, TAU); ctx.fill();
-    } else frustum(k.gx, k.gy, 0.1, 0.13, 0.12, zt - 0.1, stemCol, 1);
+    } else {
+      const h = Math.max(0.04, zt - 0.145);
+      boxPrism(k.gx, k.gy, 0.145, 0.17, 0.055, h, stemCol, 1);
+      boxPrism(k.gx, k.gy, 0.145, 0.055, 0.17, h, stemCol, 1);
+    }
+    // 맑은 덮개 — 스템 색이 비친다. 너무 짙으면 축 색이 사라지니 아주 옅게
+    boxPrism(k.gx, k.gy, 0.14, 0.29, 0.29, 0.1, "#eaf1f5", 0.28);
+    const [ex, ey] = P(k.gx - 0.29, k.gy - 0.29, 0.185);
+    const [ex2] = P(k.gx + 0.29, k.gy - 0.29, 0.185);
+    ctx.strokeStyle = "rgba(255,255,255,0.65)"; ctx.lineWidth = Math.max(1, S * 0.012);
+    ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex2, ey); ctx.stroke();
   };
 
   const hueOf = (i: number, t: number) => (t * 40 + i * 30) % 360;
@@ -404,24 +438,44 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     // 숫자 아래에는 축 이름만 — "번 눌렀어요" 는 숫자와 떨어져 있어 어색했다 (2026-09-13 사용자)
     ctx.fillText(total === 0 ? `${SWITCH_NAME[sw]} · 키캡을 톡톡 눌러요 · 자판으로도 쳐 봐요` : SWITCH_NAME[sw], c.w / 2, topY + baseSize * 0.72 + 14);
 
-    // 케이스
+    /*
+     * 케이스 — **투명 아크릴**. 바닥판(z 0) 위로 벽이 RIM 만큼 솟아 키캡의 아랫부분을 감싼다.
+     * 뒤·왼쪽 껍데기는 키캡보다 먼저, 앞·오른쪽 껍데기는 **키캡보다 나중에** 그린다 — 그래야 캡이 케이스 안에
+     * 들어앉은 것으로 보이고, 반투명이라 그 너머로 스위치와 캡 밑동이 비친다 (2026-09-13 사용자).
+     */
     const hx = cols / 2 + CASE_PAD, hy = rows / 2 + CASE_PAD;
-    const clearCase = caseColor.startsWith("rgba");
+    const ihx = cols / 2 + 0.04, ihy = rows / 2 + 0.04;
+    const wallY = (y: number, x0: number, x1: number, za: number, zb: number, fill: string) => quad([P(x0, y, za), P(x1, y, za), P(x1, y, zb), P(x0, y, zb)], fill);
+    const wallX = (x: number, y0: number, y1: number, za: number, zb: number, fill: string) => quad([P(x, y0, za), P(x, y1, za), P(x, y1, zb), P(x, y0, zb)], fill);
+    const flat = (x0: number, y0: number, x1: number, y1: number, z: number, fill: string) => quad([P(x0, y0, z), P(x1, y0, z), P(x1, y1, z), P(x0, y1, z)], fill);
+
     for (let k = 6; k >= 1; k--) {
       const g = k * 0.05;
       quad([P(-hx - g, -hy - g, -CASE_H), P(hx + g * 2.4, -hy - g, -CASE_H), P(hx + g * 2.4, hy + g * 2.2, -CASE_H), P(-hx - g, hy + g * 2.2, -CASE_H)], "rgba(0, 8, 12, 0.07)");
     }
-    ctx.globalAlpha = clearCase ? 0.55 : 1;
-    quad([P(hx, -hy, -CASE_H), P(hx, hy, -CASE_H), P(hx, hy, 0), P(hx, -hy, 0)], sideGrad([P(hx, -hy, 0), P(hx, hy, 0)], [P(hx, -hy, -CASE_H), P(hx, hy, -CASE_H)], caseColor, clearCase ? 0.9 : 0.74));
-    quad([P(-hx, hy, -CASE_H), P(hx, hy, -CASE_H), P(hx, hy, 0), P(-hx, hy, 0)], sideGrad([P(-hx, hy, 0), P(hx, hy, 0)], [P(-hx, hy, -CASE_H), P(hx, hy, -CASE_H)], caseColor, clearCase ? 0.95 : 0.86));
+    // 뒤·왼쪽 껍데기 + 윗테
+    ctx.globalAlpha = 0.5;
+    wallY(-hy, -hx, hx, -CASE_H, RIM, shade(ACRYL, 0.7));
+    wallX(-hx, -hy, hy, -CASE_H, RIM, shade(ACRYL, 0.78));
+    flat(-hx, -hy, hx, -ihy, RIM, shade(ACRYL, 1.02));
+    flat(-hx, -ihy, -ihx, hy, RIM, shade(ACRYL, 0.98));
+    ctx.globalAlpha = 0.6;
+    wallY(-ihy, -ihx, ihx, 0, RIM, shade(ACRYL, 0.88));
+    wallX(-ihx, -ihy, ihy, 0, RIM, shade(ACRYL, 0.93));
+    ctx.globalAlpha = 1;
+    // 바닥판 — 스위치 소켓·핀·LED
     withTop(0, 0, 0, () => {
-      roundRectPath(ctx, -hx, -hy, hx * 2, hy * 2, 0.14); ctx.fillStyle = shade(caseColor, 1); ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,0.35)"; ctx.lineWidth = 0.015; ctx.stroke();
+      roundRectPath(ctx, -ihx, -ihy, ihx * 2, ihy * 2, 0.07);
+      ctx.fillStyle = "rgba(226, 235, 242, 0.6)"; ctx.fill();
       for (let i = 0; i < keys.length; i++) {
         const k = keys[i];
-        roundRectPath(ctx, k.gx - 0.42, k.gy - 0.42, 0.84, 0.84, 0.08); ctx.fillStyle = clearCase ? "rgba(20,30,36,0.35)" : shade(caseColor, 0.6); ctx.fill();
+        roundRectPath(ctx, k.gx - 0.33, k.gy - 0.33, 0.66, 0.66, 0.05);
+        ctx.fillStyle = shade(SWITCH_COLOR[sw], 0.55, 0.5); ctx.fill();
+        ctx.fillStyle = "rgba(206, 178, 108, 0.85)";
+        ctx.fillRect(k.gx - 0.14, k.gy + 0.08, 0.07, 0.05);
+        ctx.fillRect(k.gx + 0.08, k.gy - 0.03, 0.06, 0.05);
         const ao = ctx.createRadialGradient(k.gx, k.gy, 0.2, k.gx, k.gy, 0.62);
-        ao.addColorStop(0, `rgba(0,0,0,${0.22 + k.press * 0.18})`); ao.addColorStop(1, "rgba(0,0,0,0)");
+        ao.addColorStop(0, `rgba(0,0,0,${0.2 + k.press * 0.18})`); ao.addColorStop(1, "rgba(0,0,0,0)");
         ctx.fillStyle = ao; ctx.fillRect(k.gx - 0.7, k.gy - 0.7, 1.4, 1.4);
         const glow = ledMix * (0.5 + 0.5 * Math.sin(t * 1.4 + i)) + k.flash * 1.5;
         if (glow > 0.02) {
@@ -431,16 +485,6 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
         }
       }
     });
-    ctx.globalAlpha = 1;
-    // 키링
-    {
-      const [rx, ry] = P(-hx - 0.05, -hy - 0.05, -CASE_H * 0.4);
-      ctx.strokeStyle = "#c9ced4"; ctx.lineWidth = Math.max(2, S * 0.05);
-      ctx.beginPath(); ctx.ellipse(rx - S * 0.32, ry - S * 0.1, S * 0.24, S * 0.18, -0.5, 0, TAU); ctx.stroke();
-      ctx.strokeStyle = "#eef1f4"; ctx.lineWidth = Math.max(1, S * 0.02);
-      ctx.beginPath(); ctx.ellipse(rx - S * 0.32, ry - S * 0.1, S * 0.24, S * 0.18, -0.5, 3.6, 5.2); ctx.stroke();
-      for (let j = 0; j < 3; j++) { ctx.strokeStyle = "#b8bec6"; ctx.lineWidth = Math.max(2, S * 0.045); ctx.beginPath(); ctx.ellipse(rx - S * 0.1 + j * S * 0.05, ry + j * S * 0.02 - S * 0.02, S * 0.05, S * 0.035, 0.6, 0, TAU); ctx.stroke(); }
-    }
 
     // 키 — 먼 것부터
     const order = keys.map((k, i) => i).sort((a, b) => depth(keys[a].gx, keys[a].gy) - depth(keys[b].gx, keys[b].gy));
@@ -451,7 +495,7 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
       const glow = ledMix * (0.5 + 0.5 * Math.sin(t * 1.4 + i)) + k.flash * 1.5;
       const seeThrough = L.style === "clear" || L.style === "pudding";
 
-      drawSwitch(k, k.press, seeThrough);
+      drawSwitch(k, k.press);
       if (seeThrough && glow > 0.02) {
         const [sx, sy] = P(k.gx, k.gy, 0.16);
         const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, S * 0.55);
@@ -565,6 +609,66 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
         g.addColorStop(0, `hsla(${hh} 100% 65% / ${clamp(glow * 0.35, 0, 1)})`); g.addColorStop(1, `hsla(${hh} 100% 65% / 0)`);
         ctx.fillStyle = g; ctx.fillRect(gx - S * 0.6, gy - S * 0.3, S * 1.2, S * 0.5);
       }
+    }
+
+    // 앞·오른쪽 껍데기 — 키캡 **위에** 덮어 감싸고, 반투명이라 캡 밑동과 스위치가 비친다
+    ctx.globalAlpha = 0.16;
+    wallY(ihy, -ihx, ihx, 0, RIM, shade(ACRYL, 1));
+    wallX(ihx, -ihy, ihy, 0, RIM, shade(ACRYL, 0.92));
+    ctx.globalAlpha = 0.3;
+    flat(-hx, ihy, hx, hy, RIM, shade(ACRYL, 1.05));
+    flat(ihx, -hy, hx, ihy, RIM, shade(ACRYL, 1));
+    ctx.globalAlpha = 0.2;
+    wallY(hy, -hx, hx, -CASE_H, RIM, shade(ACRYL, 0.88));
+    wallX(hx, -hy, hy, -CASE_H, RIM, shade(ACRYL, 0.8));
+    ctx.globalAlpha = 1;
+    // 아크릴 모서리 — 빛을 받아 또렷한 선
+    ctx.lineWidth = Math.max(1, S * 0.012); ctx.strokeStyle = "rgba(255,255,255,0.55)";
+    for (const [ex, ey] of [[hx, hy], [ihx, ihy]] as const) {
+      ctx.beginPath();
+      const c1 = P(-ex, -ey, RIM), c2 = P(ex, -ey, RIM), c3 = P(ex, ey, RIM), c4 = P(-ex, ey, RIM);
+      ctx.moveTo(c1[0], c1[1]); ctx.lineTo(c2[0], c2[1]); ctx.lineTo(c3[0], c3[1]); ctx.lineTo(c4[0], c4[1]); ctx.closePath(); ctx.stroke();
+    }
+    ctx.strokeStyle = "rgba(255,255,255,0.3)";
+    for (const [ex, ey] of [[hx, -hy], [hx, hy], [-hx, hy]] as const) {
+      const a = P(ex, ey, RIM), b = P(ex, ey, -CASE_H);
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+    }
+
+    /*
+     * 키링 — 사진처럼 **길게**: 케이스에 박힌 작은 고리 → 볼 체인 여덟 알 → 랍스터 클래스프.
+     * 화면 공간에서 그린다 — 금속은 어느 각도에서 봐도 같은 광택이면 된다 (2026-09-13 사용자).
+     */
+    {
+      const metal = (x: number, y: number, r: number) => {
+        const g = ctx.createLinearGradient(x - r, y - r, x + r, y + r);
+        g.addColorStop(0, "#ffffff"); g.addColorStop(0.34, "#b7bec6"); g.addColorStop(0.62, "#eef2f5"); g.addColorStop(1, "#79818b");
+        return g;
+      };
+      const [ax, ay] = P(-hx + 0.04, hy * 0.35, RIM * 0.45);
+      ctx.lineWidth = Math.max(1.8, S * 0.032); ctx.strokeStyle = metal(ax, ay, S * 0.1);
+      ctx.beginPath(); ctx.ellipse(ax - S * 0.05, ay - S * 0.06, S * 0.09, S * 0.062, -0.7, 0, TAU); ctx.stroke();
+      let last: [number, number] = [ax - S * 0.12, ay - S * 0.04];
+      for (let i = 1; i <= 8; i++) {
+        const t2 = i / 8;
+        const bx = ax - S * (0.12 + t2 * 0.4), by = ay - S * (0.04 + t2 * 0.1) + Math.sin(t2 * 3.1) * S * 0.03;
+        ctx.strokeStyle = "#98a0a8"; ctx.lineWidth = Math.max(1, S * 0.011);
+        ctx.beginPath(); ctx.moveTo(last[0], last[1]); ctx.lineTo(bx, by); ctx.stroke();
+        const r = S * 0.04;
+        ctx.fillStyle = metal(bx, by, r); ctx.beginPath(); ctx.arc(bx, by, r, 0, TAU); ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,0.85)"; ctx.beginPath(); ctx.arc(bx - r * 0.32, by - r * 0.36, r * 0.27, 0, TAU); ctx.fill();
+        last = [bx, by];
+      }
+      ctx.save();
+      ctx.translate(last[0] - S * 0.13, last[1] - S * 0.03); ctx.rotate(-1.35);
+      const LL = S * 0.3, WW = S * 0.17;
+      ctx.lineWidth = Math.max(2, S * 0.048); ctx.strokeStyle = metal(0, 0, LL * 0.6);
+      ctx.beginPath(); ctx.ellipse(0, 0, WW * 0.5, LL * 0.5, 0, 0, TAU); ctx.stroke();
+      ctx.lineWidth = Math.max(1, S * 0.016); ctx.strokeStyle = "rgba(118,126,134,0.9)";
+      ctx.beginPath(); ctx.moveTo(-WW * 0.3, -LL * 0.08); ctx.lineTo(-WW * 0.3, LL * 0.24); ctx.stroke();
+      ctx.fillStyle = metal(0, -LL * 0.5, S * 0.05);
+      ctx.beginPath(); ctx.arc(0, -LL * 0.5, S * 0.037, 0, TAU); ctx.fill();
+      ctx.restore();
     }
   });
 
