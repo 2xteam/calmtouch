@@ -1,5 +1,5 @@
 import { createCanvas2D, createLoop, DEEP_BG } from "@/lib/canvas/tools";
-import { keySound, type SwitchKind } from "@/lib/audio/tones";
+import { gameFanfare, gamePop, keySound, type SwitchKind } from "@/lib/audio/tones";
 import { clamp, damp, hexToRgb255, lerp, TAU } from "@/lib/util/math";
 import type { EngineFactory } from "./types";
 
@@ -69,6 +69,7 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
   const digitsOf = (n: number) => Math.max(1, String(Math.max(0, n)).length);
   const celebrate = (level: number, x: number, y: number, big = true) => {
     levelPop = big ? 1 : 0.45; ringLife = 1; ringLevel = big ? level : 1;
+    if (sound) { if (big) gameFanfare(level); else gamePop(level); }
     const n = big ? 14 + level * 10 : 6 + level * 4;
     for (let i = 0; i < n; i++) {
       const a = Math.random() * TAU, sp = (160 + Math.random() * 260) * (0.8 + level * 0.25);

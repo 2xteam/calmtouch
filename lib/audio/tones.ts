@@ -70,6 +70,54 @@ export function thud(pitch = 180, vel = 0.5) {
 }
 
 /**
+ * 게임 소리 — 숫자가 터질 때 (2026-09-13 사용자).
+ *
+ * 옛 8비트 게임의 관습을 그대로 쓴다: **사각파**(칩튠 음색), 짧은 음을 계단처럼 빠르게 올리기, 끝음만 길게.
+ * 귀에 걸리지 않게 장3화음(0·4·7·12·16·19 반음)만 밟는다 — 어떤 순간에 터져도 불협이 나지 않는다.
+ *
+ *   gamePop      작은 축하(20·30·200·300 …) — 동전 줍는 소리. 두 음이 빠르게 올라간다
+ *   gameFanfare  큰 축하(10·100·1000 …) — 레벨 업. 자릿수가 클수록 음이 많고 높고, 끝에 반짝임이 뿌려진다
+ */
+function blip(c: AudioContext, at: number, freq: number, len: number, vel: number, type: OscillatorType = "square") {
+  if (!master) return;
+  const osc = c.createOscillator();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, at);
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(vel, at + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+  osc.connect(g).connect(master);
+  osc.start(at);
+  osc.stop(at + len + 0.02);
+}
+
+/** 장3화음 계단 — 반음 수 */
+const LADDER = [0, 4, 7, 12, 16, 19];
+
+export function gamePop(level = 2) {
+  const c = ensureAudio();
+  if (!c || !master) return;
+  const now = c.currentTime;
+  const up = 1 + Math.min(3, Math.max(0, level - 2)) * 0.09; // 자리가 커질수록 조금 높게
+  blip(c, now, 988 * up, 0.055, 0.16);
+  blip(c, now + 0.055, 1319 * up, 0.15, 0.18);
+}
+
+export function gameFanfare(level = 2) {
+  const c = ensureAudio();
+  if (!c || !master) return;
+  const now = c.currentTime;
+  const n = Math.min(LADDER.length, 2 + level);
+  const root = 523.25 * (1 + Math.min(4, Math.max(0, level - 2)) * 0.09);
+  for (let i = 0; i < n; i++) blip(c, now + i * 0.055, root * 2 ** (LADDER[i] / 12), 0.09, 0.18);
+  // 끝음 — 한 옥타브 위에서 길게
+  blip(c, now + n * 0.055, root * 2 ** (LADDER[n - 1] / 12) * 2, 0.32, 0.2);
+  // 반짝임 — 높은 삼각파를 흩뿌린다
+  for (let i = 0; i < 3 + level; i++) blip(c, now + n * 0.055 + Math.random() * 0.3, 1800 + Math.random() * 2400, 0.06, 0.07, "triangle");
+}
+
+/**
  * 기계식 스위치(축) 소리 — 축마다 성격이 다르다 (2026-09-12 사용자: "축마다 특성이 있는 소리, 아주 중요").
  *
  *   적축  선형(45g) — 걸림 없이 내려가 바닥에 "탁". 클릭 없음. 맑고 가벼운 바닥 소리
