@@ -70,6 +70,23 @@ export function thud(pitch = 180, vel = 0.5) {
 }
 
 /**
+ * 첫 손짓에 오디오를 깨운다.
+ *
+ * 브라우저는 사용자 동작 전에는 AudioContext 를 멈춰 둔다. `resume()` 은 **비동기**라, 같은 손짓 안에서 바로 낸
+ * 소리는 버려진다 — 그래서 장면에 들어와 처음 한두 번이 소리 없이 지나갔다(2026-09-13 사용자: "조금 지나거나
+ * 설정창을 열었다 닫아야 적용됨"). 캔버스에 손이 닿는 순간 이걸 불러 무음 한 조각을 흘려 파이프라인을 깨운다.
+ */
+export function warmAudio() {
+  const c = ensureAudio();
+  if (!c || !master) return;
+  const buf = c.createBuffer(1, 1, c.sampleRate);
+  const src = c.createBufferSource();
+  src.buffer = buf;
+  src.connect(master);
+  src.start();
+}
+
+/**
  * 게임 소리 — 숫자가 터질 때 (2026-09-13 사용자).
  *
  * 옛 8비트 게임의 관습을 그대로 쓴다: **사각파**(칩튠 음색), 짧은 음을 계단처럼 빠르게 올리기, 끝음만 길게.

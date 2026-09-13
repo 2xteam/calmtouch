@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ENGINES } from "@/lib/engines/index";
 import { EngineUnsupportedError, type SceneEngine } from "@/lib/engines/types";
+import { warmAudio } from "@/lib/audio/tones";
 import { loadPref, savePref } from "@/lib/prefs";
 import { loadColor, rememberRecent, saveColor } from "@/lib/recent";
 import type { SceneControl } from "@/lib/engines/types";
@@ -97,7 +98,8 @@ export function PlayScreen({ scene }: { scene: Scene }) {
       if (saved) setColor(saved);
     }
     // 기억된 설정 — 소리·기울기·흐름과 조정 값. 엔진은 colorReady 뒤에 만들어져 이 값으로 시작한다
-    if (scene.sound && loadPref("sound") === true) setSound(true);
+    // 소리는 **기본이 켜짐** — 끈 적이 있을 때만 꺼진 채로 연다 (2026-09-13 사용자)
+    if (scene.sound && loadPref("sound") !== false) setSound(true);
     if (scene.idleDrift) { const d = loadPref("drift"); if (typeof d === "boolean") setDrift(d); }
     if (
       loadPref("tilt") === true &&
@@ -163,6 +165,7 @@ export function PlayScreen({ scene }: { scene: Scene }) {
         };
 
         const onDown = (e: PointerEvent) => {
+          warmAudio(); // 이 손짓 안에서 오디오를 깨워 둔다 — 안 그러면 첫 소리가 버려진다
           const { x, y } = local(e);
           const id = e.pointerType === "mouse" ? 0 : e.pointerId;
           pressed.add(id);
@@ -386,6 +389,13 @@ export function PlayScreen({ scene }: { scene: Scene }) {
             <path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
+        <div className="play-bar-right">
+        <button type="button" className="play-btn" aria-label="처음으로 되돌리기" onClick={clear}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M20.5 12a8.5 8.5 0 1 1-2.5-6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+            <path d="M19.5 3.5V8H15" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
         <button
           ref={fabRef}
           type="button"
@@ -408,6 +418,7 @@ export function PlayScreen({ scene }: { scene: Scene }) {
             </svg>
           )}
         </button>
+        </div>
       </div>
 
       {/* 도구 패널 — 떠 있는 카드. 열고 닫는 건 오직 사용자다 (저절로 숨지 않는다 · 2026-09-11 사용자 지적) */}
@@ -487,9 +498,6 @@ export function PlayScreen({ scene }: { scene: Scene }) {
         ) : null}
 
         <div className="play-actions">
-          <button type="button" className="play-btn play-btn--label" onClick={clear}>
-            지우기
-          </button>
           {canFullscreen ? (
             <button type="button" className="play-btn play-btn--label" onClick={toggleFullscreen}>
               {fullscreen ? "창으로" : "전체 화면"}

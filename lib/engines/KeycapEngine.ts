@@ -65,6 +65,9 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     if (ctl.key === "switch" && ctl.kind === "choice") sw = ctl.default as SwitchKind;
   }
   let keys: Key[] = [];
+  /** 키링 줄의 구슬 — 선언이 layout() 보다 뒤면 초기화 때 TDZ 로 터진다 */
+  type Bead = { rx: number; ry: number; px: number; py: number };
+  let chain: Bead[] = [];
   let cols = 1, rows = 1, S = 80, cx = 0, cy = 0;
   let yaw = YAW0, pitch = PITCH0;
   let CT = Math.cos(yaw), ST = Math.sin(yaw);
@@ -102,6 +105,7 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     cols = count <= 4 ? Math.ceil(Math.sqrt(count)) : 3;
     if (count === 2 || count === 3) cols = count;
     rows = Math.ceil(count / cols);
+    chain = [];
     for (let i = 0; i < keys.length; i++) {
       const col = i % cols, row = Math.floor(i / cols);
       const rowCount = row === rows - 1 ? count - row * cols : cols;
@@ -123,9 +127,10 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
   /** 돌려도 화면을 벗어나지 않게 — 바깥 반지름으로 잡아 yaw 와 무관한 크기를 쓴다 */
   const fit = () => {
     const rad = Math.hypot(cols / 2 + CASE_PAD, rows / 2 + CASE_PAD);
-    const wU = rad * 2 + 0.7;
+    const wU = rad * 2 + 1.5; // 키링 줄이 들어갈 자리
     const hU = rad * 2 * pitch + CAP_H + CASE_H + RIM + 1.2;
-    S = clamp(Math.min((c.w * 0.86) / wU, (c.h * 0.52) / hU), 30, 170);
+    // 1.5 배 — 화면을 조금 벗어나도 크게 보이는 쪽이 낫다 (2026-09-13 사용자)
+    S = clamp(Math.min((c.w * 0.86) / wU, (c.h * 0.52) / hU) * 1.5, 34, 260);
     cx = c.w / 2; cy = c.h * 0.57 + (CASE_H * S) / 2;
   };
   const P = (x: number, y: number, z: number): [number, number] => [cx + (x * CT - y * ST) * S, cy + (x * ST + y * CT) * pitch * S - z * S];
@@ -299,34 +304,83 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     g.addColorStop(0, shade(col, 1.25)); g.addColorStop(0.55, shade(col, 1)); g.addColorStop(1, shade(col, 0.62));
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
   };
-  /** 캐릭터 머리 피규어 — 캡 위에 얹힌 흉상 (톰과 제리 피규어 키캡처럼) */
+  /**
+   * 캐릭터 머리 피규어 — 캡 위에 얹힌 흉상 (톰과 제리 피규어 키캡처럼).
+   *
+   * 이목구비를 화면 좌표에 찍으면 **돌려도 늘 정면을 본다** (2026-09-13 사용자 지적). 그래서 눈·코·귀를 구면 위의
+   * **모델 방향**으로 두고, 그 방향을 투영해 자리와 보임 정도를 구한다. 얼굴은 캡의 앞쪽(+y)을 보므로 뒤로 돌리면
+   * 뒤통수가 보인다. 구 자체는 어느 각도에서도 원이라 화면 공간에 그려도 된다.
+   */
   const headFig = (k: Key, zTop: number, fig: Fig, col: string) => {
     const r = S * 0.2;
-    const [hx, hy] = P(k.gx, k.gy + 0.02, zTop);
-    const cyy = hy - r * 0.95;
+    const [hcx, hby] = P(k.gx, k.gy + 0.02, zTop);
+    const hcy = hby - r * 0.95;
+    const cosE = Math.sqrt(Math.max(0, 1 - pitch * pitch)); // 카메라 높이 — pitch 가 sin(고도)
+    /** 구면 방향 n → [화면 x, 화면 y, 보임(>0 이면 이쪽을 향한다)] */
+    const on = (nx2: number, ny2: number, nz: number, dist = 1) => {
+      const ox = r * dist * (nx2 * CT - ny2 * ST);
+      const oy = r * dist * ((nx2 * ST + ny2 * CT) * pitch - nz);
+      const vis = nx2 * ST * cosE + ny2 * CT * cosE + nz * pitch;
+      return [hcx + ox, hcy + oy, vis] as const;
+    };
+    // 캡 윗면에 지는 그림자
     withTop(k.gx, k.gy, zTop, () => { ctx.fillStyle = "rgba(0,0,0,0.22)"; ctx.beginPath(); ctx.ellipse(0.02, 0.05, 0.19, 0.17, 0, 0, TAU); ctx.fill(); });
+    // 귀 — 머리보다 먼저 (머리가 밑동을 덮는다)
     if (fig === "rabbit") {
       for (const sgn of [-1, 1]) {
-        ctx.fillStyle = shade(col, 0.96); ctx.beginPath(); ctx.ellipse(hx + sgn * r * 0.42, cyy - r * 1.15, r * 0.24, r * 0.62, sgn * 0.15, 0, TAU); ctx.fill();
-        ctx.fillStyle = "rgba(255,170,190,0.6)"; ctx.beginPath(); ctx.ellipse(hx + sgn * r * 0.42, cyy - r * 1.15, r * 0.11, r * 0.42, sgn * 0.15, 0, TAU); ctx.fill();
+        const [ex, ey, vis] = on(sgn * 0.5, 0.1, 0.95, 1.05);
+        const w = r * 0.24 * (0.45 + 0.55 * clamp(Math.abs(CT), 0, 1));
+        ctx.fillStyle = shade(col, vis > 0 ? 0.98 : 0.82);
+        ctx.beginPath(); ctx.ellipse(ex, ey, w, r * 0.62, sgn * 0.15, 0, TAU); ctx.fill();
+        if (vis > 0.05) {
+          ctx.fillStyle = "rgba(255,170,190,0.6)";
+          ctx.beginPath(); ctx.ellipse(ex, ey, w * 0.45, r * 0.42, sgn * 0.15, 0, TAU); ctx.fill();
+        }
       }
     }
-    if (fig === "bear") { sphere(hx - r * 0.72, cyy - r * 0.62, r * 0.32, col); sphere(hx + r * 0.72, cyy - r * 0.62, r * 0.32, col); }
-    if (fig === "cat") { ctx.fillStyle = shade(col, 0.95); for (const sgn of [-1, 1]) { ctx.beginPath(); ctx.moveTo(hx + sgn * r * 0.35, cyy - r * 0.7); ctx.lineTo(hx + sgn * r * 0.95, cyy - r * 1.35); ctx.lineTo(hx + sgn * r * 0.95, cyy - r * 0.3); ctx.closePath(); ctx.fill(); } }
-    sphere(hx, cyy, r, col);
-    ctx.fillStyle = "#2b2326";
-    ctx.beginPath(); ctx.arc(hx - r * 0.3, cyy - r * 0.05, r * 0.08, 0, TAU); ctx.arc(hx + r * 0.3, cyy - r * 0.05, r * 0.08, 0, TAU); ctx.fill();
-    if (fig === "duck") {
-      ctx.fillStyle = "#f08a2c"; ctx.beginPath(); ctx.ellipse(hx, cyy + r * 0.3, r * 0.42, r * 0.2, 0, 0, TAU); ctx.fill();
-      ctx.fillStyle = "rgba(0,0,0,0.15)"; ctx.beginPath(); ctx.ellipse(hx, cyy + r * 0.34, r * 0.4, r * 0.07, 0, 0, TAU); ctx.fill();
-    } else {
-      ctx.fillStyle = fig === "bear" ? "#f6e7d8" : "rgba(255,255,255,0.75)"; ctx.beginPath(); ctx.ellipse(hx, cyy + r * 0.3, r * 0.3, r * 0.22, 0, 0, TAU); ctx.fill();
-      ctx.fillStyle = "#2b2326"; ctx.beginPath(); ctx.arc(hx, cyy + r * 0.22, r * 0.07, 0, TAU); ctx.fill();
-      ctx.strokeStyle = "#2b2326"; ctx.lineWidth = Math.max(1, r * 0.05); ctx.beginPath(); ctx.arc(hx, cyy + r * 0.28, r * 0.12, 0.2 * Math.PI, 0.8 * Math.PI); ctx.stroke();
+    if (fig === "bear") for (const sgn of [-1, 1]) { const [ex, ey] = on(sgn * 0.8, 0.1, 0.6, 1.02); sphere(ex, ey, r * 0.32, col); }
+    if (fig === "cat") for (const sgn of [-1, 1]) {
+      const [ex, ey, vis] = on(sgn * 0.62, 0.15, 0.78, 1.0);
+      ctx.fillStyle = shade(col, vis > 0 ? 0.95 : 0.8);
+      ctx.beginPath(); ctx.moveTo(ex - r * 0.3, ey + r * 0.3); ctx.lineTo(ex, ey - r * 0.45); ctx.lineTo(ex + r * 0.3, ey + r * 0.3); ctx.closePath(); ctx.fill();
     }
-    ctx.fillStyle = "rgba(240,120,140,0.4)"; ctx.beginPath(); ctx.arc(hx - r * 0.55, cyy + r * 0.2, r * 0.13, 0, TAU); ctx.arc(hx + r * 0.55, cyy + r * 0.2, r * 0.13, 0, TAU); ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,0.7)"; ctx.beginPath(); ctx.arc(hx - r * 0.42, cyy - r * 0.45, r * 0.13, 0, TAU); ctx.fill();
+    sphere(hcx, hcy, r, col);
+    // 이목구비 — 앞(+y)을 본다. 옆으로 돌면 한쪽으로 몰리고 뒤로 돌면 사라진다
+    const eyeCol = "#2b2326";
+    for (const sgn of [-1, 1]) {
+      const [ex, ey, vis] = on(sgn * 0.42, 0.82, 0.16, 0.99);
+      if (vis <= 0.08) continue;
+      ctx.fillStyle = eyeCol;
+      ctx.beginPath(); ctx.ellipse(ex, ey, r * 0.085 * clamp(vis * 1.6, 0.3, 1), r * 0.085, 0, 0, TAU); ctx.fill();
+    }
+    const [mx2, my2, mvis] = on(0, 0.95, -0.12, 0.99);
+    if (mvis > 0.08) {
+      const k2 = clamp(mvis * 1.5, 0.3, 1);
+      if (fig === "duck") {
+        ctx.fillStyle = "#f08a2c";
+        ctx.beginPath(); ctx.ellipse(mx2, my2, r * 0.42 * k2, r * 0.2, 0, 0, TAU); ctx.fill();
+        ctx.fillStyle = "rgba(0,0,0,0.15)";
+        ctx.beginPath(); ctx.ellipse(mx2, my2 + r * 0.05, r * 0.4 * k2, r * 0.07, 0, 0, TAU); ctx.fill();
+      } else {
+        ctx.fillStyle = fig === "bear" ? "#f6e7d8" : "rgba(255,255,255,0.75)";
+        ctx.beginPath(); ctx.ellipse(mx2, my2, r * 0.3 * k2, r * 0.22, 0, 0, TAU); ctx.fill();
+        ctx.fillStyle = eyeCol;
+        ctx.beginPath(); ctx.arc(mx2, my2 - r * 0.08, r * 0.07 * k2, 0, TAU); ctx.fill();
+        ctx.strokeStyle = eyeCol; ctx.lineWidth = Math.max(1, r * 0.05);
+        ctx.beginPath(); ctx.arc(mx2, my2 - r * 0.02, r * 0.12 * k2, 0.2 * Math.PI, 0.8 * Math.PI); ctx.stroke();
+      }
+    }
+    for (const sgn of [-1, 1]) {
+      const [ex, ey, vis] = on(sgn * 0.72, 0.6, -0.08, 0.99);
+      if (vis <= 0.08) continue;
+      ctx.fillStyle = `rgba(240,120,140,${0.4 * clamp(vis * 1.6, 0, 1)})`;
+      ctx.beginPath(); ctx.ellipse(ex, ey, r * 0.13 * clamp(vis * 1.6, 0.3, 1), r * 0.13, 0, 0, TAU); ctx.fill();
+    }
+    // 광택은 빛을 따르므로 화면 고정
+    ctx.fillStyle = "rgba(255,255,255,0.7)";
+    ctx.beginPath(); ctx.arc(hcx - r * 0.42, hcy - r * 0.45, r * 0.13, 0, TAU); ctx.fill();
   };
+
   const drawIcon = (g: CanvasRenderingContext2D, icon: Icon, ink: string, s: number) => {
     g.lineCap = "round"; g.lineJoin = "round"; g.strokeStyle = ink; g.fillStyle = ink; g.lineWidth = s * 0.09;
     if (icon === "face") {
@@ -385,6 +439,112 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     const [ex2] = P(k.gx + 0.29, k.gy - 0.29, 0.185);
     ctx.strokeStyle = "rgba(255,255,255,0.65)"; ctx.lineWidth = Math.max(1, S * 0.012);
     ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex2, ey); ctx.stroke();
+  };
+
+  /*
+   * 키링 — 케이스 모서리에 매달려 **탁자 위에 놓인** 줄. 구슬을 화면 좌표(yaw 를 이미 먹인 rx·ry 평면)에 두고
+   * 베를레로 푼다. 케이스가 돌면 매단 자리가 원을 그리며 움직이고 줄이 뒤따라 끌린다 —
+   * 카메라 방향으로 모서리를 골라 매달면 각도가 바뀔 때마다 자리가 튄다 (2026-09-13 사용자 지적).
+   */
+  const CHAIN_N = 8, CHAIN_L = 0.075;
+  /** 매단 자리 — 모델의 한 모서리를 yaw 로 돌린 평면 좌표 */
+  const chainAnchor = (): [number, number] => {
+    const ax = -(cols / 2 + CASE_PAD), ay = -(rows / 2 + CASE_PAD);
+    return [ax * CT - ay * ST, ax * ST + ay * CT];
+  };
+  const resetChain = () => {
+    const [ax, ay] = chainAnchor();
+    const d = Math.hypot(ax, ay) || 1;
+    chain = Array.from({ length: CHAIN_N }, (_, i) => {
+      const rx = ax + (ax / d) * i * CHAIN_L, ry = ay + (ay / d) * i * CHAIN_L;
+      return { rx, ry, px: rx, py: ry };
+    });
+  };
+  const stepChain = () => {
+    if (chain.length !== CHAIN_N) resetChain();
+    const [ax, ay] = chainAnchor();
+    for (let i = 1; i < CHAIN_N; i++) {
+      const b = chain[i];
+      const vx = (b.rx - b.px) * 0.88, vy = (b.ry - b.py) * 0.88;
+      b.px = b.rx; b.py = b.ry;
+      b.rx += vx; b.ry += vy;
+    }
+    // 접혀 뭉치지 않게 — 바깥으로 살살 밀고, 앞 두 알이 이룬 방향으로 곧게 편다
+    for (let i = 1; i < CHAIN_N; i++) {
+      const b = chain[i];
+      const d = Math.hypot(b.rx, b.ry) || 1e-4;
+      b.rx += (b.rx / d) * 0.003; b.ry += (b.ry / d) * 0.003;
+      if (i >= 2) {
+        const aa = chain[i - 2], a = chain[i - 1];
+        const tx = a.rx + (a.rx - aa.rx), ty = a.ry + (a.ry - aa.ry);
+        b.rx += (tx - b.rx) * 0.14; b.ry += (ty - b.ry) * 0.14;
+      }
+    }
+    chain[0].rx = ax; chain[0].ry = ay; chain[0].px = ax; chain[0].py = ay;
+    const ehx = cols / 2 + CASE_PAD + 0.05, ehy = rows / 2 + CASE_PAD + 0.05;
+    for (let pass = 0; pass < 6; pass++) {
+      for (let i = 1; i < CHAIN_N; i++) {
+        const a = chain[i - 1], b = chain[i];
+        const dx = b.rx - a.rx, dy = b.ry - a.ry;
+        const d = Math.hypot(dx, dy) || 1e-4;
+        const k = (d - CHAIN_L) / d;
+        b.rx -= dx * k; b.ry -= dy * k;
+      }
+      // 케이스 밑으로 파고들지 않게 — 모델 좌표로 되돌려 사각형 밖으로 민다
+      for (let i = 1; i < CHAIN_N; i++) {
+        const b = chain[i];
+        const mx = b.rx * CT + b.ry * ST, my = -b.rx * ST + b.ry * CT;
+        if (Math.abs(mx) >= ehx || Math.abs(my) >= ehy) continue;
+        let nmx = mx, nmy = my;
+        if (ehx - Math.abs(mx) < ehy - Math.abs(my)) nmx = (mx < 0 ? -1 : 1) * ehx;
+        else nmy = (my < 0 ? -1 : 1) * ehy;
+        b.rx = nmx * CT - nmy * ST; b.ry = nmx * ST + nmy * CT;
+      }
+    }
+  };
+  const metalGrad = (x: number, y: number, r: number) => {
+    const g = ctx.createLinearGradient(x - r, y - r, x + r, y + r);
+    g.addColorStop(0, "#ffffff"); g.addColorStop(0.34, "#b7bec6"); g.addColorStop(0.62, "#eef2f5"); g.addColorStop(1, "#79818b");
+    return g;
+  };
+  /** near=true 면 케이스보다 앞(ry>0)에 있는 토막만 — 앞뒤를 나눠 그려야 케이스와 겹쳐 보이지 않는다 */
+  const drawChain = (near: boolean) => {
+    const beadZ = (i: number) => (i === 0 ? RIM * 0.5 : i === 1 ? RIM * 0.22 : 0.02);
+    const scr = (i: number): [number, number] => [cx + chain[i].rx * S, cy + chain[i].ry * pitch * S - beadZ(i) * S];
+    for (let i = 1; i < CHAIN_N; i++) {
+      if (chain[i].ry > 0 !== near) continue;
+      const a = scr(i - 1), b = scr(i);
+      ctx.strokeStyle = "#98a0a8"; ctx.lineWidth = Math.max(1, S * 0.011);
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+      const rr = S * 0.038;
+      ctx.fillStyle = metalGrad(b[0], b[1], rr);
+      ctx.beginPath(); ctx.arc(b[0], b[1], rr, 0, TAU); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.beginPath(); ctx.arc(b[0] - rr * 0.32, b[1] - rr * 0.36, rr * 0.27, 0, TAU); ctx.fill();
+    }
+    // 케이스에 박힌 고리
+    if (chain[0].ry > 0 === near) {
+      const [ox, oy] = scr(0);
+      ctx.lineWidth = Math.max(1.8, S * 0.032); ctx.strokeStyle = metalGrad(ox, oy, S * 0.1);
+      ctx.beginPath(); ctx.ellipse(ox, oy, S * 0.085, S * 0.06, -0.7, 0, TAU); ctx.stroke();
+    }
+    // 랍스터 클래스프 — 마지막 토막 방향으로 눕힌다
+    const last = CHAIN_N - 1;
+    if (chain[last].ry > 0 === near) {
+      const a = scr(last - 1), b = scr(last);
+      const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+      ctx.save();
+      ctx.translate(b[0] + Math.cos(ang) * S * 0.16, b[1] + Math.sin(ang) * S * 0.16);
+      ctx.rotate(ang + Math.PI / 2);
+      const LL = S * 0.3, WW = S * 0.17;
+      ctx.lineWidth = Math.max(2, S * 0.048); ctx.strokeStyle = metalGrad(0, 0, LL * 0.6);
+      ctx.beginPath(); ctx.ellipse(0, 0, WW * 0.5, LL * 0.5, 0, 0, TAU); ctx.stroke();
+      ctx.lineWidth = Math.max(1, S * 0.016); ctx.strokeStyle = "rgba(118,126,134,0.9)";
+      ctx.beginPath(); ctx.moveTo(-WW * 0.3, -LL * 0.08); ctx.lineTo(-WW * 0.3, LL * 0.24); ctx.stroke();
+      ctx.fillStyle = metalGrad(0, -LL * 0.5, S * 0.05);
+      ctx.beginPath(); ctx.arc(0, -LL * 0.5, S * 0.037, 0, TAU); ctx.fill();
+      ctx.restore();
+    }
   };
 
   const hueOf = (i: number, t: number) => (t * 40 + i * 30) % 360;
@@ -486,6 +646,8 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     }
     // 어느 쪽이 카메라에 가까운지 — 돌리면 앞뒤가 뒤바뀐다
     const ny = CT >= 0 ? 1 : -1, nx = ST >= 0 ? 1 : -1;
+    stepChain();
+    drawChain(false); // 케이스보다 뒤에 있는 토막
     // 먼 쪽 껍데기 + 윗테 (키캡보다 먼저)
     ctx.globalAlpha = 0.5;
     wallY(-ny * hy, -hx, hx, -CASE_H, RIM, shade(ACRYL, faceLit([0, -ny])));
@@ -679,41 +841,7 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
       ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
     }
 
-    /*
-     * 키링 — 사진처럼 **길게**: 케이스에 박힌 작은 고리 → 볼 체인 여덟 알 → 랍스터 클래스프.
-     * 화면 공간에서 그린다 — 금속은 어느 각도에서 봐도 같은 광택이면 된다 (2026-09-13 사용자).
-     */
-    {
-      const metal = (x: number, y: number, r: number) => {
-        const g = ctx.createLinearGradient(x - r, y - r, x + r, y + r);
-        g.addColorStop(0, "#ffffff"); g.addColorStop(0.34, "#b7bec6"); g.addColorStop(0.62, "#eef2f5"); g.addColorStop(1, "#79818b");
-        return g;
-      };
-      const [ax, ay] = P(-nx * (hx - 0.04), ny * hy * 0.35, RIM * 0.45);
-      ctx.lineWidth = Math.max(1.8, S * 0.032); ctx.strokeStyle = metal(ax, ay, S * 0.1);
-      ctx.beginPath(); ctx.ellipse(ax - S * 0.05, ay - S * 0.06, S * 0.09, S * 0.062, -0.7, 0, TAU); ctx.stroke();
-      let last: [number, number] = [ax - S * 0.12, ay - S * 0.04];
-      for (let i = 1; i <= 8; i++) {
-        const t2 = i / 8;
-        const bx = ax - S * (0.12 + t2 * 0.4), by = ay - S * (0.04 + t2 * 0.1) + Math.sin(t2 * 3.1) * S * 0.03;
-        ctx.strokeStyle = "#98a0a8"; ctx.lineWidth = Math.max(1, S * 0.011);
-        ctx.beginPath(); ctx.moveTo(last[0], last[1]); ctx.lineTo(bx, by); ctx.stroke();
-        const r = S * 0.04;
-        ctx.fillStyle = metal(bx, by, r); ctx.beginPath(); ctx.arc(bx, by, r, 0, TAU); ctx.fill();
-        ctx.fillStyle = "rgba(255,255,255,0.85)"; ctx.beginPath(); ctx.arc(bx - r * 0.32, by - r * 0.36, r * 0.27, 0, TAU); ctx.fill();
-        last = [bx, by];
-      }
-      ctx.save();
-      ctx.translate(last[0] - S * 0.13, last[1] - S * 0.03); ctx.rotate(-1.35);
-      const LL = S * 0.3, WW = S * 0.17;
-      ctx.lineWidth = Math.max(2, S * 0.048); ctx.strokeStyle = metal(0, 0, LL * 0.6);
-      ctx.beginPath(); ctx.ellipse(0, 0, WW * 0.5, LL * 0.5, 0, 0, TAU); ctx.stroke();
-      ctx.lineWidth = Math.max(1, S * 0.016); ctx.strokeStyle = "rgba(118,126,134,0.9)";
-      ctx.beginPath(); ctx.moveTo(-WW * 0.3, -LL * 0.08); ctx.lineTo(-WW * 0.3, LL * 0.24); ctx.stroke();
-      ctx.fillStyle = metal(0, -LL * 0.5, S * 0.05);
-      ctx.beginPath(); ctx.arc(0, -LL * 0.5, S * 0.037, 0, TAU); ctx.fill();
-      ctx.restore();
-    }
+    drawChain(true);
   });
 
   return {

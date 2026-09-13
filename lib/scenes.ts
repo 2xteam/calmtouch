@@ -225,7 +225,7 @@ export const SCENES: Scene[] = [
     params: { style: "pastel" },
     controls: [
       { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 4 },
-      { key: "led", label: "LED", kind: "switch", default: false },
+      { key: "led", label: "LED", kind: "switch", default: true },
       HAPTIC_CONTROL,
       SWITCH_CONTROL,
     ],
@@ -237,7 +237,7 @@ export const SCENES: Scene[] = [
     params: { style: "emoji" },
     controls: [
       { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 4 },
-      { key: "led", label: "LED", kind: "switch", default: false },
+      { key: "led", label: "LED", kind: "switch", default: true },
       HAPTIC_CONTROL,
       SWITCH_CONTROL,
     ],
@@ -249,7 +249,7 @@ export const SCENES: Scene[] = [
     params: { style: "figure" },
     controls: [
       { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 3 },
-      { key: "led", label: "LED", kind: "switch", default: false },
+      { key: "led", label: "LED", kind: "switch", default: true },
       HAPTIC_CONTROL,
       SWITCH_CONTROL,
     ],
@@ -285,7 +285,7 @@ export const SCENES: Scene[] = [
     params: { style: "print" },
     controls: [
       { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 4 },
-      { key: "led", label: "LED", kind: "switch", default: false },
+      { key: "led", label: "LED", kind: "switch", default: true },
       HAPTIC_CONTROL,
       SWITCH_CONTROL,
     ],
@@ -297,7 +297,7 @@ export const SCENES: Scene[] = [
     params: { style: "typewriter" },
     controls: [
       { key: "count", label: "키캡", kind: "stepper", min: 1, max: 9, default: 3 },
-      { key: "led", label: "LED", kind: "switch", default: false },
+      { key: "led", label: "LED", kind: "switch", default: true },
       HAPTIC_CONTROL,
       SWITCH_CONTROL,
     ],

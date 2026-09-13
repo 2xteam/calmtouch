@@ -915,6 +915,11 @@ a {
   pointer-events: auto;
 }
 
+.play-bar-right {
+  display: flex;
+  gap: 8px;
+}
+
 .play-fab[aria-expanded="true"] {
   background: rgba(238, 247, 248, 0.16);
   border-color: var(--on-dark);
