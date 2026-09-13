@@ -36,8 +36,9 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
   const clay = ctx0.scene.params?.clay === true;
   /**
    * 말랑이(`params.squishy`) — 슬라임과 질감이 전혀 다르다 (2026-09-13 사용자).
-   * 슬라임은 점성 액체: 흐르고 늘어나고 붙고 비친다. 말랑이는 **탄성 있는 무광 폼**: 눌리면 깊게 들어가되 흐르지 않고,
-   * 떼면 슬로우 라이징으로 천천히 부풀어 제 모양으로 돌아온다. 손에 붙지 않고, 기포·광택·투명감이 없다.
+   * 슬라임은 점성 액체: 흐르고 늘어나고 붙고 비친다. 말랑이는 **모양을 기억하지 않는 무광 폼**: 눌린 자리는 눌린 채,
+   * 밀어낸 윤곽은 밀린 채 **그대로 굳는다** (2026-09-13 2차 정정: 되돌아오면 흐물거리는 젤리로 보인다).
+   * 손에 붙지 않고, 기포·광택·투명감이 없다. 손을 뗀 순간 물리를 멈춰 저절로 둥글어지지도 않는다.
    */
   const squishy = ctx0.scene.params?.squishy === true;
   let sound = ctx0.sound;
@@ -315,14 +316,14 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
         d.depth = Math.min(1, d.depth + dt / (squishy ? 0.45 : 0.35));
         // 다 잠긴 뒤에도 누르고 있으면 바닥에 닿아 구멍이 난다 (말랑이는 폼이라 뚫리지 않는다)
         if (d.depth >= 1 && !squishy) d.through = Math.min(1, d.through + dt / 0.55);
-      } else if (!clay) {
-        // 슬라임은 흘러 메워지고, 말랑이는 슬로우 라이징 — 처음엔 천천히, 끝엔 빨리 부푼다
-        d.depth -= squishy ? (dt / 7.2) * (0.35 + (1 - d.depth) * 1.3) : dt / 2.5;
+      } else if (!clay && !squishy) {
+        // 슬라임만 흘러 메워진다. 말랑이는 눌린 자국이 그대로 남는다
+        d.depth -= dt / 2.5;
         d.through = Math.max(0, d.through - dt / 1.6);
         if (d.depth <= 0 && d.through <= 0) { dents.splice(i, 1); continue; }
       }
     }
-    if (clay && dents.length > 40) dents.splice(0, dents.length - 40);
+    if ((clay || squishy) && dents.length > 40) dents.splice(0, dents.length - 40);
 
     if (wax) {
       bbox();
@@ -347,7 +348,7 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
 
     // 점토는 손이 닿아 있을 때만 움직인다. 떼면 그 모양 그대로 굳는다 — 흐느적거림이 없다
     const touching = [...fingers.values()].some((f) => f.pressed);
-    const simSteps = clay && !touching ? 0 : sub;
+    const simSteps = (clay || squishy) && !touching ? 0 : sub;
     if (clay && !touching) for (const n of nodes) { n.vx = 0; n.vy = 0; }
 
     for (let s = 0; s < simSteps; s++) {
@@ -363,7 +364,7 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
         const n = nodes[i];
         const l = nodes[(i + N - 1) % N], r = nodes[(i + 1) % N];
         let ax = 0, ay = 0;
-        const springK = clay ? 6 : squishy ? 40 : 18, bendK = clay ? 14 : squishy ? 120 : 70;
+        const springK = clay ? 6 : squishy ? 16 : 18, bendK = clay ? 14 : squishy ? 38 : 70;
         for (const o of [l, r]) {
           const dx = o.x - n.x, dy = o.y - n.y;
           const d = Math.hypot(dx, dy) || 0.001;
@@ -382,9 +383,8 @@ export const createSlimeEngine: EngineFactory = (canvas, ctx0) => {
           const wobble = 1 + noise2(Math.cos(ang) * 1.3 + t * 0.35, Math.sin(ang) * 1.3 - t * 0.27) * wobbleAmp;
           const tx = restX + Math.cos(ang) * radius * wobble;
           const ty = restY + Math.sin(ang) * radius * wobble;
-          // 말랑이는 모양 기억이 세다 — 눌린 자리만 들어가고 나머지는 제자리 (너무 세면 눌러도 윤곽이 안 변한다)
-          const memory = squishy ? 3 : 0.7;
-          n.vx += (tx - n.x) * memory * hs; n.vy += (ty - n.y) * memory * hs;
+          // 말랑이는 **모양 기억이 없다** — 민 대로 남는다. 슬라임만 제 모양으로 기어 돌아간다
+          if (!squishy) { n.vx += (tx - n.x) * 0.7 * hs; n.vy += (ty - n.y) * 0.7 * hs; }
         }
         for (const d of dents) {
           const dx = n.x - d.x, dy = n.y - d.y;

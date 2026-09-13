@@ -6,8 +6,8 @@ import type { EngineFactory } from "./types";
 /**
  * 왁뿌 — 파스텔 왁스를 입힌 도넛 모양 점토 (참고: 팔레트슬라임 "왕도넛 왁뿌", 2026-09-11 사용자 사진).
  *
- *   · 몸은 바깥 고리 96점의 **말랑이** (2026-09-13 정정: 점토 → 말랑이). 손 근처만 움직이고, 손을 떼면 슬로우 라이징으로
- *     제 모양(원)으로 천천히 부풀어 돌아온다. 자국도 천천히 사라진다. 뚫린 구멍은 문질러 메운다
+ *   · 몸은 바깥 고리 96점의 **말랑이**. 손 근처만 움직이고, **민 대로 눌린 대로 굳는다** (2026-09-13 2차 정정:
+ *     되돌아오면 흐물거리는 젤리로 보인다). 뚫린 구멍은 문질러 메운다
  *   · 속살 색은 도넛 경계 상자 (u,v) 의 **clay 캔버스**다. 가운데 구멍도 그 캔버스의 빈자리일 뿐이라
  *     문지르면 색이 서로 끌려 섞이고 구멍도 메워진다 (2026-09-11 정정: 구멍·색을 억지로 지키지 않는다)
  *   · 껍질(wax 캔버스): 분홍·하늘·노랑 세 구역 + 별 스프링클. 꾹 누르면 **조각조각** 갈라져 가운데 조각은
@@ -348,7 +348,7 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
     // 자국 — 다 잠긴 뒤에도 누르고 있으면 바닥에 닿아 뚫린다. 손을 떼면 말랑이라 천천히 부풀어 사라진다
     for (let i = dents.length - 1; i >= 0; i--) {
       const d = dents[i];
-      if (!d.held) { d.depth -= (dt / 7.2) * (0.35 + (1 - d.depth) * 1.3); if (d.depth <= 0) dents.splice(i, 1); continue; }
+      if (!d.held) continue; // 자국은 그대로 남는다
       d.depth = Math.min(1, d.depth + dt / 0.45);
       if (d.depth >= 1) d.through = Math.min(1, d.through + dt / 0.8);
       const [u, v] = toUV(d.x, d.y);
@@ -372,9 +372,8 @@ export const createWaxEngine: EngineFactory = (canvas, ctx0) => {
     // 말랑이 — 손이 닿아 있을 때는 손 근처만 움직이고, 떼면 제 모양으로 천천히 부풀어 돌아온다 (슬로우 라이징)
     const touching = [...fingers.values()].some((f) => f.pressed);
     if (!touching) {
-      const k = 1 - damp(0.55, dt); // 꾸덕한 말랑이 — 제 모양으로 세 배 천천히 기어 돌아온다 (2026-09-13 사용자)
-      for (let i = 0; i < N; i++) { const n = outer[i], r0 = rest[i]; if (!r0) continue; n.vx = 0; n.vy = 0; n.x += (r0.x - n.x) * k; n.y += (r0.y - n.y) * k; }
-      bbox();
+      // 손을 떼면 그 자리에서 멈춘다 — 제 모양으로 돌아가면 말랑이가 아니라 젤리로 보인다
+      for (const n of outer) { n.vx = 0; n.vy = 0; }
     } else {
       for (let s = 0; s < sub; s++) {
         const A = area(outer);

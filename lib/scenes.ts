@@ -209,14 +209,14 @@ export const SCENES: Scene[] = [
     thumb: `${glow(50, 55, "rgba(127,216,176,0.95)", 32)},linear-gradient(170deg, #04161b, #0b262e)`,
   },
   {
-    slug: "squishy", title: "말랑이", subtitle: "꾹 누르면 깊게 들어가고, 손을 떼면 천천히 부풀어 돌아와요. 슬라임과 달리 흐르지 않아요.",
-    emoji: "🍑", category: "things", engine: "slime", color: { kind: "single", defaultColor: "#f6b7cf", presets: SINGLE_PRESETS }, idleDrift: false, tilt: true,
+    slug: "squishy", title: "말랑이", subtitle: "누르면 눌린 대로, 밀면 밀린 대로 굳어요. 슬라임과 달리 흐르지도 돌아오지도 않아요.",
+    emoji: "🍑", category: "things", engine: "slime", color: { kind: "single", defaultColor: "#f6b7cf", presets: SINGLE_PRESETS }, idleDrift: false, tilt: false,
     params: { squishy: true },
     thumb: `${glow(50, 52, "rgba(246,183,207,0.95)", 34)},linear-gradient(170deg, #04161b, #0b262e)`,
   },
   {
-    slug: "wax", title: "왁뿌", subtitle: "파스텔 왁스를 입힌 말랑이 도넛. 꾹 누르면 껍질이 조각조각 갈라지고, 속살은 천천히 부풀어 돌아와요.",
-    emoji: "🍩", category: "things", engine: "wax", color: { kind: "palette", colors: ["#f6b7cf", "#b9d7f2", "#f7ecb0"] }, idleDrift: false, tilt: true, sound: true,
+    slug: "wax", title: "왁뿌", subtitle: "파스텔 왁스를 입힌 말랑이 도넛. 꾹 누르면 껍질이 조각조각 갈라지고, 속살은 눌린 모양 그대로 남아요.",
+    emoji: "🍩", category: "things", engine: "wax", color: { kind: "palette", colors: ["#f6b7cf", "#b9d7f2", "#f7ecb0"] }, idleDrift: false, tilt: false, sound: true,
     thumb: `${glow(50, 50, "rgba(246,183,207,0.9)", 34)},${glow(70, 40, "rgba(185,215,242,0.8)", 30)},linear-gradient(170deg, #04161b, #0b262e)`,
   },
   {
