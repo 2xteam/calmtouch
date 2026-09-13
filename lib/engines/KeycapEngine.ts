@@ -459,10 +459,23 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     wallX(-hx, -hy, hy, -CASE_H, RIM, shade(ACRYL, 0.78));
     flat(-hx, -hy, hx, -ihy, RIM, shade(ACRYL, 1.02));
     flat(-hx, -ihy, -ihx, hy, RIM, shade(ACRYL, 0.98));
+    ctx.globalAlpha = 0.3;
+    flat(ihx, -hy, hx, ihy, RIM, shade(ACRYL, 1));
     ctx.globalAlpha = 0.6;
     wallY(-ihy, -ihx, ihx, 0, RIM, shade(ACRYL, 0.88));
     wallX(-ihx, -ihy, ihy, 0, RIM, shade(ACRYL, 0.93));
     ctx.globalAlpha = 1;
+    // 뒤·왼쪽 모서리 — 키캡 뒤에 있으므로 캡보다 먼저 그린다
+    ctx.lineWidth = Math.max(1, S * 0.012); ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    for (const [ex, ey] of [[hx, hy], [ihx, ihy]] as const) {
+      const back = P(-ex, -ey, RIM), right = P(ex, -ey, RIM), left = P(-ex, ey, RIM);
+      ctx.beginPath(); ctx.moveTo(left[0], left[1]); ctx.lineTo(back[0], back[1]); ctx.lineTo(right[0], right[1]); ctx.stroke();
+    }
+    ctx.strokeStyle = "rgba(255,255,255,0.28)";
+    {
+      const a = P(hx, -hy, RIM), b2 = P(hx, -hy, -CASE_H);
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b2[0], b2[1]); ctx.stroke();
+    }
     // 바닥판 — 스위치 소켓·핀·LED
     withTop(0, 0, 0, () => {
       roundRectPath(ctx, -ihx, -ihy, ihx * 2, ihy * 2, 0.07);
@@ -617,20 +630,18 @@ export const createKeycapEngine: EngineFactory = (canvas, ctx0) => {
     wallX(ihx, -ihy, ihy, 0, RIM, shade(ACRYL, 0.92));
     ctx.globalAlpha = 0.3;
     flat(-hx, ihy, hx, hy, RIM, shade(ACRYL, 1.05));
-    flat(ihx, -hy, hx, ihy, RIM, shade(ACRYL, 1));
     ctx.globalAlpha = 0.2;
     wallY(hy, -hx, hx, -CASE_H, RIM, shade(ACRYL, 0.88));
     wallX(hx, -hy, hy, -CASE_H, RIM, shade(ACRYL, 0.8));
     ctx.globalAlpha = 1;
-    // 아크릴 모서리 — 빛을 받아 또렷한 선
+    // 앞·오른쪽 모서리만 캡 위에 — 뒤쪽 모서리는 이미 캡보다 먼저 그렸다
     ctx.lineWidth = Math.max(1, S * 0.012); ctx.strokeStyle = "rgba(255,255,255,0.55)";
     for (const [ex, ey] of [[hx, hy], [ihx, ihy]] as const) {
-      ctx.beginPath();
-      const c1 = P(-ex, -ey, RIM), c2 = P(ex, -ey, RIM), c3 = P(ex, ey, RIM), c4 = P(-ex, ey, RIM);
-      ctx.moveTo(c1[0], c1[1]); ctx.lineTo(c2[0], c2[1]); ctx.lineTo(c3[0], c3[1]); ctx.lineTo(c4[0], c4[1]); ctx.closePath(); ctx.stroke();
+      const right = P(ex, -ey, RIM), corner = P(ex, ey, RIM), front = P(-ex, ey, RIM);
+      ctx.beginPath(); ctx.moveTo(right[0], right[1]); ctx.lineTo(corner[0], corner[1]); ctx.lineTo(front[0], front[1]); ctx.stroke();
     }
     ctx.strokeStyle = "rgba(255,255,255,0.3)";
-    for (const [ex, ey] of [[hx, -hy], [hx, hy], [-hx, hy]] as const) {
+    for (const [ex, ey] of [[hx, hy], [-hx, hy]] as const) {
       const a = P(ex, ey, RIM), b = P(ex, ey, -CASE_H);
       ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
     }
