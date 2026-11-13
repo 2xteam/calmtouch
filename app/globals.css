@@ -80,7 +80,7 @@ a {
   border-radius: var(--radius-lg);
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  box-shadow: 0 18px 44px rgba(6, 34, 40, 0.08);
+  box-shadow: 0 18px 44px rgba(40, 20, 70, 0.08);
 }
 
 .sheet + .sheet {
@@ -183,7 +183,7 @@ a {
 
 .btn--primary {
   background: var(--btn-gradient);
-  box-shadow: 0 10px 24px rgba(6, 60, 72, 0.18);
+  box-shadow: 0 10px 24px rgba(214, 41, 118, 0.18);
   color: var(--on-accent);
 }
 
@@ -311,7 +311,7 @@ a {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 8px;
-  box-shadow: 0 12px 40px rgba(6, 34, 40, 0.24);
+  box-shadow: 0 12px 40px rgba(40, 20, 70, 0.24);
   z-index: 300;
   display: flex;
   flex-direction: column;
@@ -521,7 +521,7 @@ a {
   border-radius: 14px;
   border: 1px solid var(--border);
   background: var(--bg-card);
-  box-shadow: 0 18px 40px rgba(6, 34, 40, 0.18);
+  box-shadow: 0 18px 40px rgba(40, 20, 70, 0.18);
   z-index: 60;
   display: grid;
   gap: 2px;
@@ -654,7 +654,7 @@ a {
   border: 1px solid var(--border);
   background: var(--bg-secondary);
   color: var(--text-primary);
-  box-shadow: 0 8px 22px rgba(6, 34, 40, 0.16);
+  box-shadow: 0 8px 22px rgba(40, 20, 70, 0.16);
   cursor: pointer;
   align-items: center;
   justify-content: center;
@@ -713,7 +713,7 @@ a {
 .scene-card:hover {
   transform: translateY(-2px);
   border-color: var(--border);
-  box-shadow: 0 14px 30px rgba(6, 34, 40, 0.12);
+  box-shadow: 0 14px 30px rgba(40, 20, 70, 0.12);
 }
 
 .scene-thumb {
@@ -1158,9 +1158,9 @@ a {
 }
 
 .play-toggle[aria-checked="true"] {
-  border-color: rgba(95, 184, 201, 0.7);
-  background: rgba(17, 98, 113, 0.55);
-  box-shadow: 0 0 0 1px rgba(95, 184, 201, 0.25), 0 6px 18px rgba(95, 184, 201, 0.18);
+  border-color: rgba(246, 165, 211, 0.7);
+  background: rgba(150, 47, 191, 0.55);
+  box-shadow: 0 0 0 1px rgba(246, 165, 211, 0.25), 0 6px 18px rgba(246, 165, 211, 0.18);
 }
 
 .play-toggle:hover {

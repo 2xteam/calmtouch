@@ -4,13 +4,10 @@
     → my-obsidian-vault / 20-Design/앱 공통 UI와 아이콘.md
   -->
   <defs>
-    <linearGradient id="tile16" x1="0" y1="0" x2="1" y2="1" gradientTransform="rotate(15)">
-      <stop offset="0" stop-color="#134450"/>
-      <stop offset="1" stop-color="#071c22"/>
-    </linearGradient>
+    <linearGradient id="tile16" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#fa7e1e"/><stop offset=".35" stop-color="#d62976"/><stop offset=".68" stop-color="#962fbf"/><stop offset="1" stop-color="#4f5bd5"/></linearGradient><radialGradient id="tile16Glow" cx=".12" cy=".95" r=".55"><stop offset="0" stop-color="#feda75" stop-opacity=".85"/><stop offset="1" stop-color="#feda75" stop-opacity="0"/></radialGradient>
   </defs>
-  <rect width="192" height="192" rx="44" fill="url(#tile16)"/>
-  <circle cx="96" cy="96" r="50" fill="none" stroke="#eef7f8" stroke-width="16"
+  <rect width="192" height="192" rx="44" fill="url(#tile16)"/><rect width="192" height="192" rx="44" fill="url(#tile16Glow)"/>
+  <circle cx="96" cy="96" r="50" fill="none" stroke="#ffffff" stroke-width="16"
           stroke-linecap="round" stroke-dasharray="260 54" transform="rotate(-70 96 96)"/>
-  <circle cx="96" cy="96" r="15" fill="#e8d18a"/>
+  <circle cx="96" cy="96" r="15" fill="#feda75"/>
 </svg>

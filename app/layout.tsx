@@ -38,7 +38,7 @@ export const metadata: Metadata = {
  * 첫 페인트 색은 라이트 팔레트의 강조색이다.
  */
 export const viewport: Viewport = {
-  themeColor: "#116271",
+  themeColor: "#962fbf",
   viewportFit: "cover",
   width: "device-width",
   initialScale: 1,
