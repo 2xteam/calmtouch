@@ -8,11 +8,11 @@ type Props = {
   priority?: boolean;
 };
 
-/** 사이트 타이틀 옆 마크. 파비콘은 `app/layout.tsx`의 `metadata.icons`(`/favicon.png`)와 별도입니다. */
+/** 사이트 타이틀 옆 마크. 파비콘은 `app/layout.tsx`의 `metadata.icons`(`/favicon-v2.png`)와 별도입니다. */
 export function AppIcon({ size = 28, className, alt = "CalmTouch", priority }: Props) {
   return (
     <Image
-      src="/site-title-icon.png"
+      src="/site-title-icon-v2.png"
       alt={alt}
       width={size}
       height={size}

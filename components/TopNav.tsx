@@ -17,12 +17,12 @@ const nav = [
 
 /** 자기 앱은 빼고 나머지를 넣는다 → my-obsidian-vault / 20-Design/앱 공통 UI와 아이콘.md */
 const otherApps = [
-  { name: "SnapWord", iconUrl: "/snapword-link-icon.png", href: "https://snapword.myjane.co.kr/home" },
-  { name: "SnapNote", iconUrl: "/snapnote-link-icon.png", href: "https://snapnote.myjane.co.kr/home" },
-  { name: "FitLog", iconUrl: "/fitlog-link-icon.png", href: "https://fitlog.myjane.co.kr/home" },
-  { name: "2hbk", iconUrl: "/2hbk-link-icon.png", href: "https://2hbk.myjane.co.kr/home" },
-  { name: "TypeLog", iconUrl: "/typelog-link-icon.png", href: "https://typelog.myjane.co.kr/home" },
-  { name: "AIKit", iconUrl: "/aikit-link-icon.png", href: "https://aikit.myjane.co.kr/home" },
+  { name: "SnapWord", iconUrl: "/snapword-link-icon-v2.png", href: "https://snapword.myjane.co.kr/home" },
+  { name: "SnapNote", iconUrl: "/snapnote-link-icon-v2.png", href: "https://snapnote.myjane.co.kr/home" },
+  { name: "FitLog", iconUrl: "/fitlog-link-icon-v2.png", href: "https://fitlog.myjane.co.kr/home" },
+  { name: "2hbk", iconUrl: "/2hbk-link-icon-v2.png", href: "https://2hbk.myjane.co.kr/home" },
+  { name: "TypeLog", iconUrl: "/typelog-link-icon-v2.png", href: "https://typelog.myjane.co.kr/home" },
+  { name: "AIKit", iconUrl: "/aikit-link-icon-v2.png", href: "https://aikit.myjane.co.kr/home" },
 ];
 
 /**

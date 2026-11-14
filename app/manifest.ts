@@ -12,6 +12,6 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: "#962fbf",
     /* 플레이어는 가로로 돌려도 좋다 — 고정하지 않는다 */
     orientation: "any",
-    icons: [{ src: "/icon.png", sizes: "192x192", type: "image/png" }],
+    icons: [{ src: "/icon-v2.png", sizes: "192x192", type: "image/png" }],
   };
 }

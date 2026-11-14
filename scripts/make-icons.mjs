@@ -17,12 +17,12 @@ const SRC_16 = path.join(process.cwd(), "public", "app-icon-16.svg");
 
 /** 이름 → [크기, 원본]. 쓰임은 볼트의 표와 같다 */
 const TARGETS = [
-  ["icon.png", 192, SRC], // PWA · 일반
-  ["favicon.png", 32, SRC], // 탭 (HiDPI)
-  ["favicon-16.png", 16, SRC_16], // 탭 (일반 DPI) — 단순화 변형
-  ["site-title-icon.png", 64, SRC], // TopNav 로고
-  ["calmtouch-link-icon.png", 56, SRC], // 다른 앱 스위처
-  ["calmtouch-icon-512.png", 512, SRC], // 원본 보관
+  ["icon-v2.png", 192, SRC], // PWA · 일반
+  ["favicon-v2.png", 32, SRC], // 탭 (HiDPI)
+  ["favicon-16-v2.png", 16, SRC_16], // 탭 (일반 DPI) — 단순화 변형
+  ["site-title-icon-v2.png", 64, SRC], // TopNav 로고
+  ["calmtouch-link-icon-v2.png", 56, SRC], // 다른 앱 스위처
+  ["calmtouch-icon-512-v2.png", 512, SRC], // 원본 보관
 ];
 
 for (const [name, size, src] of TARGETS) {

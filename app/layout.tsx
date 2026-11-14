@@ -15,10 +15,10 @@ export const metadata: Metadata = {
      * → public/app-icon-16.svg
      */
     icon: [
-      { url: "/favicon-16.png", sizes: "16x16", type: "image/png" },
-      { url: "/favicon.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon-16-v2.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-v2.png", sizes: "32x32", type: "image/png" },
     ],
-    apple: "/icon.png",
+    apple: "/icon-v2.png",
   },
   manifest: "/manifest.webmanifest",
   openGraph: {
